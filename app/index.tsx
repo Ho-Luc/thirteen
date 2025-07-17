@@ -1,3 +1,4 @@
+import React from 'react'
 import { Text, View, StyleSheet, Image, TouchableOpacity} from 'react-native';
 import { useRouter } from 'expo-router';
 import Bible from '../assets/images/bible.png'; 
