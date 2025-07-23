@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Clipboard, Alert } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 
 // Import all components
 import GroupList from '../../components/group_management/groupList';
@@ -8,9 +8,14 @@ import CreateGroupForm from '../../components/group_management/createGroupForm';
 import ShareKeyModal from '../../components/group_management/shareKeyModal';
 import SettingsModal from '../../components/group_management/settingsModal';
 import DeleteConfirmationModal from '../../components/group_management/deleteConfirmationModal';
+import JoinGroupButton from '../../components/group_management/joinGroupButton';
+import JoinGroupModal from '../../components/group_management/joinGroupModal';
 import { Group } from '../../components/group_management/types';
+import { groupsService } from '../../services/groupsService';
+import { userService } from '../../services/userService';
 
 const CreateGroupsScreen = () => {
+  // ALL HOOKS MUST BE AT THE TOP AND CALLED UNCONDITIONALLY
   const [groups, setGroups] = useState<Group[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showShareKey, setShowShareKey] = useState(false);
@@ -18,7 +23,67 @@ const CreateGroupsScreen = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedGroupForDeletion, setSelectedGroupForDeletion] = useState<Group | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [showJoinGroupModal, setShowJoinGroupModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  
   const router = useRouter();
+  const navigation = useNavigation();
+
+  // useLayoutEffect MUST be called unconditionally
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      title: "",
+      headerStyle: {
+        backgroundColor: "#fff",
+      },
+      headerShadowVisible: false,
+      headerLeft: () => null,
+      headerRight: () => groups.length > 0 ? (
+        <TouchableOpacity
+          style={styles.headerGearButton}
+          onPress={() => setShowSettingsModal(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.headerGearIcon}>⚙️</Text>
+        </TouchableOpacity>
+      ) : null,
+    });
+  }, [navigation, groups.length]);
+
+  // useEffect MUST be called unconditionally
+  useEffect(() => {
+    initializeUserAndLoadGroups();
+  }, []);
+  
+  // Initialize user session and load groups
+  const initializeUserAndLoadGroups = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get or create user ID
+      const currentUserId = await userService.getOrCreateUserId();
+      setUserId(currentUserId);
+      
+      // Load user's groups
+      await loadUserGroups(currentUserId);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to initialize user session');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load groups from Appwrite
+  const loadUserGroups = async (currentUserId: string) => {
+    try {
+      const userGroups = await groupsService.getUserGroups(currentUserId);
+      setGroups(userGroups);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load groups');
+    }
+  };
 
   // Generate a unique 6-character alphanumeric key
   const generateShareKey = (): string => {
@@ -31,22 +96,69 @@ const CreateGroupsScreen = () => {
   };
 
   // Handle creating a new group
-  const handleCreateGroup = (groupName: string) => {
-    const shareKey = generateShareKey();
-    const newGroup: Group = {
-      id: Date.now().toString(),
-      name: groupName,
-      shareKey: shareKey,
-      createdAt: new Date(),
-    };
+  const handleCreateGroup = async (groupName: string) => {
+    if (!userId) {
+      Alert.alert('Error', 'User session not initialized');
+      return;
+    }
 
-    setGroups(prevGroups => [...prevGroups, newGroup]);
-    setNewGroupShareKey(shareKey);
-    setShowCreateForm(false);
-    setShowShareKey(true);
+    try {
+      setIsLoading(true);
+      const shareKey = generateShareKey();
+      
+      // Create group in Appwrite
+      const newGroup = await groupsService.createGroup({
+        name: groupName,
+        shareKey: shareKey,
+        createdBy: userId,
+      });
+
+      // Add to local state
+      setGroups(prevGroups => [...prevGroups, newGroup]);
+      setNewGroupShareKey(shareKey);
+      setShowCreateForm(false);
+      setShowShareKey(true);
+      
+    } catch (error) {
+      throw new Error('Error handling create group: ' + error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Handle copying share key to clipboard
+  // Handle joining a group
+  const handleJoinGroup = async (shareKey: string) => {
+  if (!userId) {
+    Alert.alert('Error', 'User session not initialized');
+    return;
+  }
+
+  try {
+    setIsLoading(true);
+    
+    // Join group and create membership record
+    const joinedGroup = await groupsService.joinGroup(shareKey, userId);
+    
+    // Check if user is already in this group locally
+    const isAlreadyMember = groups.some(group => group.id === joinedGroup.id);
+    
+    if (isAlreadyMember) {
+      Alert.alert('Already a Member', `You're already a member of "${joinedGroup.name}".`);
+      setShowJoinGroupModal(false);
+      return;
+    }
+
+    // Add group to user's list
+    setGroups(prevGroups => [...prevGroups, joinedGroup]);
+    setShowJoinGroupModal(false);
+    
+  } catch (error) {
+      throw new Error('Error handling' + error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
   const handleCopyShareKey = () => {
     Clipboard.setString(newGroupShareKey);
     Alert.alert('Copied!', 'Share key copied to clipboard');
@@ -63,19 +175,26 @@ const CreateGroupsScreen = () => {
   // Handle delete group request
   const handleDeleteGroupRequest = (groupToDelete: Group) => {
     setSelectedGroupForDeletion(groupToDelete);
-    setShowSettingsModal(false);
-    
+    setShowSettingsModal(false);    
     setTimeout(() => {
       setShowDeleteConfirmation(true);
     }, 300);
   };
 
   // Confirm and delete the group
-  const handleConfirmDelete = () => {
-    if (selectedGroupForDeletion) {
+  const handleConfirmDelete = async () => {
+    if (!selectedGroupForDeletion) return;
+
+    try {
+      setIsLoading(true);
+      await groupsService.deleteGroup(selectedGroupForDeletion.id);
       setGroups(prevGroups => prevGroups.filter(group => group.id !== selectedGroupForDeletion.id));
       setShowDeleteConfirmation(false);
       setSelectedGroupForDeletion(null);
+    } catch (error) {
+        throw new Error('error deleting group: ' + error);
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -85,31 +204,26 @@ const CreateGroupsScreen = () => {
     setSelectedGroupForDeletion(null);
   };
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* Header with title and settings gear */}
-      <View style={styles.header}>
-        <Text style={styles.title}>My Groups</Text>
-        {groups.length > 0 && (
-          <TouchableOpacity
-            style={styles.gearButton}
-            onPress={() => {
-              setShowSettingsModal(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.gearIcon}>⚙️</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Groups List */}
       <GroupList 
         groups={groups} 
         onGroupPress={handleNavigateToCalendar} 
       />
 
-      {/* Create Group Button */}
+      <JoinGroupButton 
+        onPress={() => setShowJoinGroupModal(true)}
+        disabled={isLoading}
+      />
+
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => setShowCreateForm(true)}
@@ -119,7 +233,6 @@ const CreateGroupsScreen = () => {
         </Text>
       </TouchableOpacity>
 
-      {/* Modals */}
       <CreateGroupForm
         visible={showCreateForm}
         onClose={() => setShowCreateForm(false)}
@@ -133,10 +246,17 @@ const CreateGroupsScreen = () => {
         onCopyKey={handleCopyShareKey}
       />
 
+      <JoinGroupModal
+        visible={showJoinGroupModal}
+        onClose={() => setShowJoinGroupModal(false)}
+        onJoinGroup={handleJoinGroup}
+        isLoading={isLoading}
+      />
+      
       {showSettingsModal && groups.length > 0 && (
         <SettingsModal
           visible={showSettingsModal}
-          groups={groups || []}
+          groups={groups}
           onClose={() => setShowSettingsModal(false)}
           onDeleteGroup={handleDeleteGroupRequest}
         />
@@ -155,32 +275,22 @@ const CreateGroupsScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  headerGearButton: {
+    padding: 8,
+    marginRight: 10,
+  },
+  headerGearIcon: {
+    fontSize: 24,
+  },
   container: {
     flex: 1,
     padding: 20,
     backgroundColor: "#fff",
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 20,
-  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
-  },
-  gearButton: {
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#dee2e6',
-  },
-  gearIcon: {
-    fontSize: 20,
   },
   addButton: {
     position: "absolute",
@@ -197,6 +307,14 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#666',
   },
 });
 
