@@ -30,7 +30,6 @@ const CreateGroupsScreen = () => {
   const router = useRouter();
   const navigation = useNavigation();
 
-  // useLayoutEffect MUST be called unconditionally
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,

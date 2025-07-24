@@ -1,7 +1,7 @@
 import React from 'react';
 import GroupCalendar from '../../../app/group_calendar/index';
 import { render, screen } from '@testing-library/react-native';
-import {expect} from '@jest/globals';
+import {expect, test} from '@jest/globals';
 
 
 // Mock the current date to make tests predictable
