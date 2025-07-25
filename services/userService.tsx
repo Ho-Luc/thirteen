@@ -3,11 +3,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class UserService {
   async createAnonymousSession(): Promise<string> {
-    try {
+  try {
       const session = await account.createAnonymousSession();
+      if (!session || !session.userId) {
+        throw new Error('Invalid session response');
+      }
+    
       await AsyncStorage.setItem('userId', session.userId);
       await AsyncStorage.setItem('sessionId', session.$id);
-
+    
       return session.userId;
     } catch (error) {
       throw new Error('Failed to create user session');
@@ -17,14 +21,19 @@ class UserService {
   async getCurrentUserId(): Promise<string | null> {
     try {
       const currentUser = await account.get();
-      if (currentUser) {
-        await AsyncStorage.setItem('userId', currentUser.$id);
+      if (currentUser && currentUser.$id) {
+        // Separate try-catch for AsyncStorage
+        try {
+          await AsyncStorage.setItem('userId', currentUser.$id);
+        } catch (storageError) {
+          // Don't fail the whole operation for storage errors
+          console.error('Storage error:', storageError);
+        }
         return currentUser.$id;
       }
-      
       return null;
     } catch (error) {
-        return null;
+      return null;
     }
   }
 

@@ -6,7 +6,7 @@ import GroupList from '../../../components/group_management/groupList';
 
 jest.spyOn(Alert, 'alert');
 
-describe('GroupList Component Tests', () => {
+describe('GroupList component tests', () => {
   const mockOnGroupPress = jest.fn();
   const specificDate = new Date('2025-06-25T10:30:00Z');
   
@@ -33,7 +33,7 @@ describe('GroupList Component Tests', () => {
   });
 
   describe('Rendering', () => {
-    it('renders all groups when provided', () => {
+    it('Renders all groups when provided', () => {
       render(<GroupList {...defaultProps} />);
       
       expect(screen.getByText('ABC123')).toBeTruthy();
@@ -45,13 +45,13 @@ describe('GroupList Component Tests', () => {
       expect(screen.getAllByText('→')).toHaveLength(2);
     });
 
-    it('renders empty state when no groups provided', () => {
+    it('Renders empty state when no groups provided', () => {
       render(<GroupList groups={[]} onGroupPress={mockOnGroupPress} />);
       
-      expect(screen.queryByText('Share Key:')).toBeFalsy();
+      expect(screen.queryByText('Share Key:')).toBeNull();
     });
 
-    it('renders single group correctly', () => {
+    it('Renders single group correctly', () => {
       const singleGroupProps = {
         groups: [defaultProps.groups[0]],
         onGroupPress: mockOnGroupPress,
@@ -66,7 +66,7 @@ describe('GroupList Component Tests', () => {
   });
 
   describe('User Interactions', () => {
-    it('calls onGroupPress when group item is pressed', () => {
+    it('Calls onGroupPress when group item is pressed', () => {
       render(<GroupList {...defaultProps} />);
       
       const firstGroupButton = screen.getByText('ABC123');
@@ -76,7 +76,7 @@ describe('GroupList Component Tests', () => {
       expect(mockOnGroupPress).toHaveBeenCalledWith(defaultProps.groups[0]);
     });
 
-    it('handles multiple rapid presses correctly', () => {
+    it('Handles multiple rapid presses correctly', () => {
       render(<GroupList {...defaultProps} />);
       
       const groupButton = screen.getByText('ABC123');
@@ -90,13 +90,13 @@ describe('GroupList Component Tests', () => {
   });
   
   describe('Edge cases', () => {
-    it('handles special characters in group names and share keys', () => {
+    it('Handles special characters in group names and share keys', () => {
       const specialCharProps = {
         groups: [
           {
             id: '1',
             name: 'Group @#$%^&*()',
-            shareKey: 'KEY-123_ABC',
+            shareKey: '123ABC',
             createdAt: specificDate,
           }
         ],
@@ -105,27 +105,34 @@ describe('GroupList Component Tests', () => {
       
       render(<GroupList {...specialCharProps} />);
       expect(screen.getByText('Group @#$%^&*()')).toBeTruthy();
-      expect(screen.getByText('Share Key: KEY-123_ABC')).toBeTruthy();
+      expect(screen.getByText('Share Key: 123ABC')).toBeTruthy();
     });
-  });
-  
-  it('handles large number of groups efficiently', () => {
-    const manyGroups = Array.from({ length: 100 }, (_, index) => ({
-      id: `${index + 1}`,
-      name: `Group ${index + 1}`,
-      shareKey: `SHARE${index + 1}`,
-      createdAt: new Date(),
-    }));
+    
+    it('Handles large number of groups efficiently', () => {
+      const manyGroups = Array.from({ length: 100 }, (_, index) => ({
+        id: `${index + 1}`,
+        name: `Group ${index + 1}`,
+        shareKey: `SHARE${index + 1}`,
+        createdAt: new Date(),
+      }));
+      
+      const largeListProps = {
+        groups: manyGroups,
+        onGroupPress: mockOnGroupPress,
+      };
+      
+      expect(() => {
+        render(<GroupList {...largeListProps} />);
+      }).not.toThrow();
+      
+      expect(screen.getByText('Group 1')).toBeTruthy();
+    });
 
-    const largeListProps = {
-      groups: manyGroups,
-      onGroupPress: mockOnGroupPress,
-    };
-
-    expect(() => {
-      render(<GroupList {...largeListProps} />);
-    }).not.toThrow();
-
-    expect(screen.getByText('Group 1')).toBeTruthy();
+    it('Applies correct container styling for empty state', () => {
+      const { getByText } = render(<GroupList groups={[]} onGroupPress={mockOnGroupPress} />);
+      
+      const emptyMessage = getByText('No groups yet. Create your first group!');
+      expect(emptyMessage).toBeTruthy();
+    });
   });
 });

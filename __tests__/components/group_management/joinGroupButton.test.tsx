@@ -6,7 +6,7 @@ import JoinGroupButton from '../../../components/group_management/joinGroupButto
 
 jest.spyOn(Alert, 'alert');
 
-describe('Delete confirmation modal tests', () => {
+describe('Join group button tests', () => {
     const mockOnPress = jest.fn();
 
     const defaultProps = {

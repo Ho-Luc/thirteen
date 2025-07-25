@@ -226,25 +226,23 @@ class GroupsService {
       throw new Error('Joining group error: ' + error);
     }
   }
-
-  // Check if user is already a member of a group
+  
   async checkMembership(userId: string, groupId: string): Promise<boolean> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId
-      );
+  try {
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupMembersCollectionId
+    );
 
-      const membership = response.documents.find((doc: any) => 
-        doc.userId === userId && doc.groupId === groupId
-      );
+    const membership = response.documents.find((doc: any) => 
+      doc.userId === userId && doc.groupId === groupId
+    );
 
-      return !!membership;
-    } catch (error) {
-      throw new Error('Error checking membership: ' + error);
-      return false;
-    }
+    return !!membership;
+  } catch (error) {
+    return false; 
   }
-}
+}}
+  
 
 export const groupsService = new GroupsService();
