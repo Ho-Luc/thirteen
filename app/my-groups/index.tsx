@@ -167,7 +167,10 @@ const CreateGroupsScreen = () => {
   const handleNavigateToCalendar = (group: Group) => {
     router.push({
       pathname: '/group_calendar',
-      params: { groupId: group.id, groupName: group.name }
+      params: { 
+        groupId: group.id, 
+        groupName: group.name 
+      }
     });
   };
 

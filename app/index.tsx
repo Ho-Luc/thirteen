@@ -1,3 +1,4 @@
+// app/index.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -5,18 +6,17 @@ import {
   StyleSheet, 
   Image, 
   TouchableOpacity, 
-  Modal, 
-  TextInput, 
   Alert 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import UserProfileCreator, { UserProfile } from '../components/user/userProfileCreator';
 import Bible from '../assets/images/bible.png';
 
 const HomeScreen = () => {
-  const [userName, setUserName] = useState<string | null>(null);
-  const [showCreateUserForm, setShowCreateUserForm] = useState(false);
-  const [inputName, setInputName] = useState('');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showCreateProfile, setShowCreateProfile] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -25,11 +25,14 @@ const HomeScreen = () => {
     checkUserExists();
   }, []);
 
-  // Check if user is stored in AsyncStorage
+  // Check if user profile is stored in AsyncStorage
   const checkUserExists = async () => {
     try {
-      const storedUserName = await AsyncStorage.getItem('userName');
-      setUserName(storedUserName);
+      const storedUserData = await AsyncStorage.getItem('userProfile');
+      if (storedUserData) {
+        const userData = JSON.parse(storedUserData) as UserProfile;
+        setUserProfile(userData);
+      }
       setIsLoading(false);
     } catch (error) {
       console.error('Error checking user:', error);
@@ -37,45 +40,52 @@ const HomeScreen = () => {
     }
   };
 
-  // Save user name to AsyncStorage
-  const saveUser = async (name: string) => {
+  // Save user profile to AsyncStorage
+  const saveUserProfile = async (profile: UserProfile) => {
     try {
-      await AsyncStorage.setItem('userName', name);
-      setUserName(name);
-      console.log('User saved successfully:', name);
+      await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+      setUserProfile(profile);
+      console.log('User profile saved successfully:', profile.name);
     } catch (error) {
-      console.error('Error saving user:', error);
-      Alert.alert('Error', 'Failed to save user. Please try again.');
+      console.error('Error saving user profile:', error);
+      Alert.alert('Error', 'Failed to save user profile. Please try again.');
     }
   };
 
-  // Handle create user form submission
-  const handleCreateUser = () => {
-    if (inputName.trim() === '') {
-      Alert.alert('Error', 'Please enter your name');
-      return;
-    }
-
-    saveUser(inputName.trim());
-    setInputName('');
-    setShowCreateUserForm(false);
+  // Handle profile creation
+  const handleProfileCreated = (profile: UserProfile) => {
+    saveUserProfile(profile);
+    setShowCreateProfile(false);
   };
 
-  // Handle form cancellation
-  const handleCancelCreateUser = () => {
-    setInputName('');
-    setShowCreateUserForm(false);
+  // Handle profile update
+  const handleProfileUpdated = (profile: UserProfile) => {
+    saveUserProfile(profile);
+    setShowEditProfile(false);
   };
 
   // Clear user data (for testing purposes)
   const clearUser = async () => {
-    try {
-      await AsyncStorage.removeItem('userName');
-      setUserName(null);
-      console.log('User data cleared');
-    } catch (error) {
-      console.error('Error clearing user:', error);
-    }
+    Alert.alert(
+      'Clear Profile',
+      'Are you sure you want to clear your profile? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem('userProfile');
+              setUserProfile(null);
+              console.log('User profile cleared');
+            } catch (error) {
+              console.error('Error clearing user profile:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (isLoading) {
@@ -91,71 +101,78 @@ const HomeScreen = () => {
       <Image source={Bible} style={styles.image} />
       <Text style={styles.title}>Welcome to Thirteen!</Text>
       
-      {userName ? (
-        <Text style={styles.subtitle}>Welcome back, {userName}!</Text>
+      {userProfile ? (
+        <>
+          {/* User Profile Display */}
+          <TouchableOpacity 
+            style={styles.userProfileContainer}
+            onPress={() => setShowEditProfile(true)}
+            activeOpacity={0.7}
+          >
+            {userProfile.avatarUri ? (
+              <Image source={{ uri: userProfile.avatarUri }} style={styles.userAvatar} />
+            ) : (
+              <View style={styles.defaultUserAvatar}>
+                <Text style={styles.defaultUserAvatarText}>👤</Text>
+              </View>
+            )}
+            <Text style={styles.welcomeText}>Welcome back, {userProfile.name}!</Text>
+            <Text style={styles.editHint}>Tap to edit profile</Text>
+          </TouchableOpacity>
+
+          {/* My Groups Button */}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.push('/my-groups')}
+          >
+            <Text style={styles.buttonText}>My Groups</Text>
+          </TouchableOpacity>
+
+          {/* Debug button (only in development) */}
+          {__DEV__ && (
+            <TouchableOpacity
+              style={[styles.button, styles.debugButton]}
+              onPress={clearUser}
+            >
+              <Text style={styles.buttonText}>Clear Profile (Debug)</Text>
+            </TouchableOpacity>
+          )}
+        </>
       ) : (
-        <Text style={styles.subtitle}>Draw near to God and mark your progress today</Text>
+        <>
+          {/* Welcome Message for New Users */}
+          <Text style={styles.subtitle}>
+            Draw near to God and mark your progress today
+          </Text>
+
+          {/* Create Profile Button */}
+          <TouchableOpacity
+            style={[styles.button, styles.createProfileButton]}
+            onPress={() => setShowCreateProfile(true)}
+          >
+            <Text style={styles.buttonText}>Create Profile</Text>
+          </TouchableOpacity>
+        </>
       )}
 
-      {/* Show Create User button if no user exists */}
-      {!userName && (
-        <TouchableOpacity
-          style={[styles.button, styles.createUserButton]}
-          onPress={() => setShowCreateUserForm(true)}
-        >
-          <Text style={styles.buttonText}>Create User</Text>
-        </TouchableOpacity>
-      )}
+      {/* Create Profile Modal */}
+      <UserProfileCreator
+        visible={showCreateProfile}
+        onClose={() => setShowCreateProfile(false)}
+        onProfileCreated={handleProfileCreated}
+        title="Create Your Profile"
+        isEditing={false}
+      />
 
-      {/* Show My Groups button only if user exists */}
-      {userName && (
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/my-groups')}
-        >
-          <Text style={styles.buttonText}>My Groups</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Create User Form Modal */}
-      <Modal
-        visible={showCreateUserForm}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={handleCancelCreateUser}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create Your Profile</Text>
-            <Text style={styles.modalSubtitle}>What should we call you?</Text>
-            
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter your name"
-              value={inputName}
-              onChangeText={setInputName}
-              autoFocus={true}
-              maxLength={30}
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={handleCancelCreateUser}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.modalButton, styles.createButton]}
-                onPress={handleCreateUser}
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Edit Profile Modal */}
+      <UserProfileCreator
+        visible={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+        onProfileCreated={handleProfileUpdated}
+        title="Edit Your Profile"
+        isEditing={true}
+        existingProfile={userProfile || undefined}
+      />
     </View>
   );
 };
@@ -163,10 +180,10 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: "#fff",
+    backgroundColor: '#fff',
   },
   image: {
     width: 100,
@@ -176,105 +193,86 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 10,
-    color: "#333",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 30,
-  },
-  button: {
-    backgroundColor: "#4287f5",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 15,
-    minWidth: 200,
-  },
-  createUserButton: {
-    backgroundColor: "#28a745",
-  },
-  debugButton: {
-    backgroundColor: "#dc3545",
-    marginTop: 20,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  loadingText: {
-    fontSize: 18,
-    color: "#666",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    padding: 25,
-    paddingBottom: 30,
-    borderRadius: 12,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalTitle: {
-    fontSize: 20,
     fontWeight: 'bold',
-    textAlign: 'center',
     marginBottom: 10,
     color: '#333',
   },
-  modalSubtitle: {
+  subtitle: {
     fontSize: 16,
+    color: '#333',
     textAlign: 'center',
-    marginBottom: 20,
-    color: '#666',
+    marginBottom: 30,
+    lineHeight: 22,
   },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 20,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 15,
-    borderRadius: 8,
+  userProfileContainer: {
     alignItems: 'center',
-  },
-  cancelButton: {
+    marginBottom: 30,
+    padding: 20,
+    borderRadius: 12,
     backgroundColor: '#f8f9fa',
     borderWidth: 1,
-    borderColor: '#dee2e6',
+    borderColor: '#e9ecef',
   },
-  cancelButtonText: {
-    color: '#6c757d',
-    fontSize: 16,
+  userAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 15,
+    borderWidth: 3,
+    borderColor: '#4287f5',
+  },
+  defaultUserAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#e9ecef',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+    borderWidth: 2,
+    borderColor: '#ddd',
+  },
+  defaultUserAvatarText: {
+    fontSize: 30,
+    color: '#999',
+  },
+  welcomeText: {
+    fontSize: 18,
     fontWeight: '600',
+    color: '#333',
+    marginBottom: 5,
+    textAlign: 'center',
   },
-  createButton: {
+  editHint: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  button: {
+    backgroundColor: '#4287f5',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 15,
+    minWidth: 200,
+  },
+  createProfileButton: {
     backgroundColor: '#28a745',
   },
-  createButtonText: {
-    color: 'white',
+  debugButton: {
+    backgroundColor: '#dc3545',
+    marginTop: 20,
+    minWidth: 150,
+  },
+  buttonText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#666',
   },
 });
 
