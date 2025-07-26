@@ -9,11 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  TouchableOpacity
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { calendarService } from '../../services/calendarService';
 import { userService } from '../../services/userService';
+import { groupsService } from '../../services/groupsService';
+import { avatarUploadService } from '../../services/avatarUploadService';
 import UserAvatarPicker from '../../components/calendar/userAvatarPicker';
 import WeekHeader from '../../components/calendar/weekHeader';
 import UserCalendarRow from '../../components/calendar/userCalendarRow';
@@ -55,13 +57,16 @@ const GroupCalendar = () => {
   const router = useRouter();
   const params = useLocalSearchParams<{ groupId: string; groupName: string }>();
   
-  const [currentUserId, setCurrentUserId] = useState<string>(''); // Will be set when members load
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentUserName, setCurrentUserName] = useState<string>('');
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
   const [userStreaks, setUserStreaks] = useState<UserStreak[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [groupInfo, setGroupInfo] = useState<any>(null);
 
   // Get screen dimensions
   const screenHeight = Dimensions.get('window').height;
@@ -106,9 +111,22 @@ const GroupCalendar = () => {
     try {
       setIsLoading(true);
       
-      // Load group members, calendar entries, streaks, and chat messages
+      // First, get the current user ID
+      const userId = await userService.getOrCreateUserId();
+      setCurrentUserId(userId);
+      console.log('Current user ID:', userId);
+
+      // Sync user profile to all groups (this will update user names)
+      await groupsService.syncUserProfileToAllGroups(userId);
+
+      // Get group information to see who created it
+      const group = await groupsService.getGroup(params.groupId);
+      setGroupInfo(group);
+      console.log('Group info:', group);
+      
+      // Load all group data
       await Promise.all([
-        loadGroupMembers(),
+        loadGroupMembers(userId),
         loadCalendarEntries(),
         loadUserStreaks(),
         loadChatMessages()
@@ -122,42 +140,34 @@ const GroupCalendar = () => {
     }
   };
 
-  const loadGroupMembers = async () => {
+  const loadGroupMembers = async (userId: string) => {
     try {
+      console.log('Loading group members for group:', params.groupId);
+      
+      // Get all group members from the database
       const members = await calendarService.getGroupMembers(params.groupId);
+      console.log('Found group members:', members);
+      
       setGroupMembers(members);
       
-      // Set current user to the first member (creator) for testing
-      if (members.length > 0 && !currentUserId) {
-        setCurrentUserId(members[0].userId);
-        console.log(`Set current user to: ${members[0].userId} (${members[0].userName})`);
+      // Find current user's name from the group members
+      const currentUser = members.find(member => member.userId === userId);
+      if (currentUser) {
+        setCurrentUserName(currentUser.userName);
+        console.log('Current user name:', currentUser.userName);
+      } else {
+        console.warn('Current user not found in group members');
+        setCurrentUserName('You');
       }
       
-      console.log(`Loaded ${members.length} group members`);
+      if (members.length === 0) {
+        console.warn('No group members found for group:', params.groupId);
+      }
+      
     } catch (error) {
       console.error('Error loading group members:', error);
       setGroupMembers([]); // Set empty array on error
-    }
-  };
-
-  // Manual sync function for testing
-  const handleSyncProfile = async () => {
-    if (!currentUserId) {
-      Alert.alert('Error', 'No current user set');
-      return;
-    }
-
-    try {
-      console.log('Starting manual profile sync...');
-      await calendarService.syncUserProfileToGroup(currentUserId, params.groupId);
-      
-      // Reload members to see updated info
-      await loadGroupMembers();
-      
-      Alert.alert('Success', 'Profile synced successfully!');
-    } catch (error) {
-      console.error('Manual sync failed:', error);
-      Alert.alert('Error', 'Failed to sync profile');
+      Alert.alert('Error', 'Failed to load group members');
     }
   };
 
@@ -165,6 +175,7 @@ const GroupCalendar = () => {
     try {
       const entries = await calendarService.getCalendarEntries(params.groupId, currentWeek);
       setCalendarEntries(entries);
+      console.log('Loaded calendar entries:', entries.length);
     } catch (error) {
       console.error('Error loading calendar entries:', error);
     }
@@ -174,6 +185,7 @@ const GroupCalendar = () => {
     try {
       const streaks = await calendarService.getUserStreaks(params.groupId);
       setUserStreaks(streaks);
+      console.log('Loaded user streaks:', streaks);
     } catch (error) {
       console.error('Error loading user streaks:', error);
     }
@@ -181,10 +193,13 @@ const GroupCalendar = () => {
 
   const loadChatMessages = async () => {
     try {
+      console.log('Loading chat messages for group:', params.groupId);
       const messages = await calendarService.getChatMessages(params.groupId);
       setChatMessages(messages);
+      console.log('Loaded chat messages:', messages);
     } catch (error) {
       console.error('Error loading chat messages:', error);
+      // Don't show alert for chat errors, just log them
     }
   };
 
@@ -240,9 +255,32 @@ const GroupCalendar = () => {
 
   const handleAvatarUpdate = async (avatarUrl: string) => {
     try {
-      await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
-      await loadGroupMembers();
+      // Check if this is a local file URL that needs uploading
+      if (avatarUrl.startsWith('file://')) {
+        console.log('🔄 Uploading local avatar to cloud storage...');
+        
+        // Upload to Appwrite storage
+        const cloudUrl = await avatarUploadService.uploadAvatar(avatarUrl, currentUserId);
+        console.log('☁️ Avatar uploaded successfully:', cloudUrl);
+        console.log(`🔗 Cloud URL length: ${cloudUrl.length} characters`);
+        
+        // Update calendar service with cloud URL
+        await calendarService.updateUserAvatar(currentUserId, params.groupId, cloudUrl);
+        console.log('✅ Avatar URL saved to database');
+      } else if (avatarUrl === '') {
+        // Remove avatar
+        await calendarService.updateUserAvatar(currentUserId, params.groupId, '');
+        console.log('🗑️ Avatar removed from database');
+      } else {
+        // Direct URL update (shouldn't happen with current flow, but good fallback)
+        await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
+        console.log('✅ Avatar URL updated in database');
+      }
+      
+      await loadGroupMembers(currentUserId);
       setShowAvatarPicker(false);
+      
+      console.log('🎉 Avatar update process completed successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update avatar');
       console.error('Avatar update error:', error);
@@ -281,29 +319,56 @@ const GroupCalendar = () => {
     };
   };
 
-  const sendMessage = async (message: string) => {
+  // Temporary debug function to manually sync avatars
+  const handleManualAvatarSync = async () => {
     try {
-      const currentUser = groupMembers.find(m => m.userId === currentUserId);
-      const newChatMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        userId: currentUserId,
-        userName: currentUser?.userName || 'You',
-        message: message,
-        timestamp: new Date()
-      };
+      console.log('🔄 Starting manual avatar sync...');
       
+      // Force sync user profile to all groups
+      await groupsService.syncUserProfileToAllGroups(currentUserId);
+      
+      // Reload group members to see changes
+      await loadGroupMembers(currentUserId);
+      
+      Alert.alert('Success', 'Avatar sync completed! Check logs for details.');
+    } catch (error: any) {
+      console.error('Manual avatar sync failed:', error);
+      Alert.alert('Error', 'Avatar sync failed: ' + error.message);
+    }
+  };
+
+  // Fixed sendMessage function
+  const sendMessage = async (message: string): Promise<void> => {
+    if (!currentUserId || !currentUserName) {
+      Alert.alert('Error', 'User information not loaded');
+      return;
+    }
+
+    try {
+      setIsSendingMessage(true);
+      
+      // Send message to database
+      const newChatMessage = await calendarService.sendChatMessage(
+        params.groupId,
+        currentUserId,
+        currentUserName,
+        message
+      );
+      
+      // Add message to local state
       setChatMessages(prev => [...prev, newChatMessage]);
       
-      // In production, save to database
-      // await calendarService.sendChatMessage(params.groupId, newChatMessage);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send message');
+      console.log('Message sent successfully:', newChatMessage);
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+    } finally {
+      setIsSendingMessage(false);
     }
   };
 
   const renderUserRow = (member: GroupMember) => {
     const isCurrentUser = member.userId === currentUserId;
-    console.log(`Rendering row for ${member.userName} (${member.userId}), isCurrentUser: ${isCurrentUser}, currentUserId: ${currentUserId}`);
     
     return (
       <UserCalendarRow
@@ -343,12 +408,15 @@ const GroupCalendar = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.currentDate}>{getCurrentDateString()}</Text>
+        {params.groupName && (
+          <Text style={styles.groupName}>{params.groupName}</Text>
+        )}
         {__DEV__ && (
           <TouchableOpacity
-            style={styles.syncButton}
-            onPress={handleSyncProfile}
+            style={styles.debugButton}
+            onPress={handleManualAvatarSync}
           >
-            <Text style={styles.syncButtonText}>🔄 Sync Profile</Text>
+            <Text style={styles.debugButtonText}>🔄 Sync Avatar</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -371,6 +439,9 @@ const GroupCalendar = () => {
             <Text style={styles.emptyStateText}>
               No group members found. Make sure you've joined this group or that members have been added.
             </Text>
+            <Text style={styles.emptyStateSubtext}>
+              Group ID: {params.groupId}
+            </Text>
           </View>
         ) : (
           groupMembers.map((member) => renderUserRow(member))
@@ -383,7 +454,7 @@ const GroupCalendar = () => {
           messages={chatMessages}
           currentUserId={currentUserId}
           onSendMessage={sendMessage}
-          isLoading={isLoading}
+          isLoading={isSendingMessage}
         />
       </View>
 
@@ -425,18 +496,6 @@ const styles = StyleSheet.create({
     color: '#4287f5',
     marginBottom: 2,
   },
-  syncButton: {
-    backgroundColor: '#28a745',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  syncButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   groupName: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -466,6 +525,25 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 10,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  debugButton: {
+    backgroundColor: '#ff9500',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  debugButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 

@@ -1,4 +1,5 @@
 import { databases, appwriteConfig, generateId, storage, Query } from '../lib/appwrite';
+import { fixAvatarUrls } from '../utils/avatarUrlFixer';
 
 export interface GroupMember {
   id: string;
@@ -36,21 +37,32 @@ class CalendarService {
   // Get all members of a group - REAL DATABASE VERSION
   async getGroupMembers(groupId: string): Promise<GroupMember[]> {
     try {
+      console.log('Fetching group members for groupId:', groupId);
+      
       const response = await databases.listDocuments(
         appwriteConfig.databaseId,
         appwriteConfig.groupMembersCollectionId,
         [Query.equal('groupId', groupId)]
       );
 
-      return response.documents.map((doc: any) => ({
+      console.log('Raw group members response:', response);
+
+      const members = response.documents.map((doc: any) => ({
         id: doc.$id,
         userId: doc.userId,
         groupId: doc.groupId,
-        userName: doc.userName || 'Anonymous User',
+        userName: doc.name || doc.userName || 'Anonymous User', // Try both field names for compatibility
         avatarUrl: doc.avatarUrl,
-        joinedAt: new Date(doc.$createdAt),
+        joinedAt: new Date(doc.joinedAt || doc.$createdAt),
       }));
+
+      // Fix any truncated avatar URLs
+      const membersWithFixedUrls = fixAvatarUrls(members);
+
+      console.log('Processed group members:', membersWithFixedUrls);
+      return membersWithFixedUrls;
     } catch (error) {
+      console.error('Error in getGroupMembers:', error);
       throw new Error('Failed to fetch group members');
     }
   }
@@ -80,6 +92,7 @@ class CalendarService {
         createdAt: new Date(doc.$createdAt),
       }));
     } catch (error) {
+      console.error('Error fetching calendar entries:', error);
       throw new Error('Failed to fetch calendar entries');
     }
   }
@@ -212,6 +225,11 @@ class CalendarService {
   // Update user avatar - REAL DATABASE VERSION
   async updateUserAvatar(userId: string, groupId: string, avatarUrl: string): Promise<void> {
     try {
+      console.log('🖼️ Updating user avatar in database...');
+      console.log(`👤 User: ${userId}`);
+      console.log(`🏷️ Group: ${groupId}`);
+      console.log(`🔗 Avatar URL length: ${avatarUrl.length} characters`);
+      
       // Find the user's membership record
       const response = await databases.listDocuments(
         appwriteConfig.databaseId,
@@ -227,15 +245,26 @@ class CalendarService {
       }
 
       const membership = response.documents[0];
+      console.log(`📝 Found membership record: ${membership.$id}`);
 
       // Update the membership record with the new avatar URL
-      await databases.updateDocument(
+      const updatePayload = avatarUrl.trim() === '' 
+        ? { avatarUrl: null } // Remove avatar
+        : { avatarUrl: avatarUrl }; // Set new avatar
+
+      const updatedMembership = await databases.updateDocument(
         appwriteConfig.databaseId,
         appwriteConfig.groupMembersCollectionId,
         membership.$id,
-        { avatarUrl }
+        updatePayload
       );
+
+      console.log('✅ Avatar updated successfully in database');
+      console.log(`📥 Stored URL: ${updatedMembership.avatarUrl || 'null'}`);
+      console.log(`🔍 URL match: ${updatedMembership.avatarUrl === avatarUrl ? 'YES' : 'NO'}`);
+      
     } catch (error) {
+      console.error('❌ Failed to update user avatar:', error);
       throw new Error('Failed to update user avatar');
     }
   }
@@ -276,32 +305,170 @@ class CalendarService {
     }
   }
 
-  // Get chat messages for a group - MOCK FOR NOW
-  async getChatMessages(groupId: string): Promise<ChatMessage[]> {
-    // TODO: Implement real chat storage when you add chat collection
-    const mockMessages: ChatMessage[] = [
-      {
-        id: 'msg-1',
-        userId: 'user-5',
-        userName: 'Hanzen',
-        message: 'What a crazy claim: "I am the resurrection and the life"',
-        timestamp: new Date('2025-01-24T17:39:00'),
-      },
-      {
-        id: 'msg-2',
-        userId: 'user-1',
-        userName: 'You',
-        message: 'And finish it tmrw',
-        timestamp: new Date('2025-01-24T18:15:00'),
-      },
-    ];
-    return mockMessages;
+  // Get chat messages for a group - REAL DATABASE VERSION
+  async getChatMessages(groupId: string, limit: number = 50): Promise<ChatMessage[]> {
+    try {
+      console.log('Fetching chat messages for groupId:', groupId);
+      
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        [
+          Query.equal('groupId', groupId),
+          Query.orderDesc('timestamp'), // Order by custom timestamp field
+          Query.limit(limit)
+        ]
+      );
+
+      console.log('Raw chat messages response:', response);
+
+      // Convert documents to ChatMessage format and reverse to show oldest first
+      const messages = response.documents
+        .map((doc: any) => ({
+          id: doc.$id,
+          userId: doc.userId,
+          userName: doc.userName || 'Anonymous User',
+          message: doc.message,
+          timestamp: new Date(doc.timestamp || doc.$createdAt), // Use custom timestamp or fallback to $createdAt
+        }))
+        .reverse(); // Reverse to show oldest messages first
+
+      console.log('Processed chat messages:', messages);
+      return messages;
+    } catch (error) {
+      console.error('Error fetching chat messages:', error);
+      // Return empty array instead of throwing to prevent chat from breaking the whole calendar
+      return [];
+    }
   }
 
-  // Send a chat message - MOCK FOR NOW  
-  async sendChatMessage(groupId: string, message: ChatMessage): Promise<ChatMessage> {
-    // TODO: Implement real chat storage when you add chat collection
-    return message;
+  // Send a chat message - REAL DATABASE VERSION
+  async sendChatMessage(
+    groupId: string, 
+    userId: string, 
+    userName: string, 
+    message: string
+  ): Promise<ChatMessage> {
+    try {
+      console.log('Sending chat message:', { groupId, userId, userName, message });
+
+      // Validate input
+      if (!message.trim()) {
+        throw new Error('Message cannot be empty');
+      }
+
+      if (message.length > 1000) {
+        throw new Error('Message is too long (max 1000 characters)');
+      }
+
+      // Create timestamp for the message
+      const timestamp = new Date().toISOString();
+
+      // Create message in database
+      const response = await databases.createDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        generateId(),
+        {
+          groupId: groupId,
+          userId: userId,
+          userName: userName,
+          message: message.trim(),
+          timestamp: timestamp, // Add the required timestamp field
+        }
+      );
+
+      console.log('Chat message created:', response);
+
+      // Return formatted message
+      const chatMessage: ChatMessage = {
+        id: response.$id,
+        userId: response.userId,
+        userName: response.userName,
+        message: response.message,
+        timestamp: new Date(response.timestamp || response.$createdAt),
+      };
+
+      return chatMessage;
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      throw new Error(`Failed to send message: ${error.message || error}`);
+    }
+  }
+
+  // Delete a chat message - REAL DATABASE VERSION
+  async deleteChatMessage(messageId: string, userId: string): Promise<void> {
+    try {
+      // First, get the message to verify ownership
+      const message = await databases.getDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        messageId
+      );
+
+      // Check if the user owns this message
+      if (message.userId !== userId) {
+        throw new Error('You can only delete your own messages');
+      }
+
+      // Delete the message
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        messageId
+      );
+
+      console.log('Chat message deleted:', messageId);
+    } catch (error) {
+      console.error('Error deleting chat message:', error);
+      throw new Error(`Failed to delete message: ${error.message || error}`);
+    }
+  }
+
+  // Get recent chat messages with pagination - REAL DATABASE VERSION
+  async getRecentChatMessages(
+    groupId: string, 
+    limit: number = 20, 
+    offset: number = 0
+  ): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        [
+          Query.equal('groupId', groupId),
+          Query.orderDesc('timestamp'), // Order by custom timestamp field
+          Query.limit(limit + 1), // Get one extra to check if there are more
+          Query.offset(offset)
+        ]
+      );
+
+      const hasMore = response.documents.length > limit;
+      const documents = hasMore ? response.documents.slice(0, limit) : response.documents;
+
+      const messages = documents
+        .map((doc: any) => ({
+          id: doc.$id,
+          userId: doc.userId,
+          userName: doc.userName || 'Anonymous User',
+          message: doc.message,
+          timestamp: new Date(doc.timestamp || doc.$createdAt), // Use custom timestamp or fallback
+        }))
+        .reverse(); // Reverse to show oldest first
+
+      return { messages, hasMore };
+    } catch (error) {
+      console.error('Error fetching recent chat messages:', error);
+      return { messages: [], hasMore: false };
+    }
+  }
+
+  // Subscribe to real-time chat updates (if using Appwrite realtime)
+  subscribeToChat(groupId: string, callback: (message: ChatMessage) => void): () => void {
+    // This would require setting up Appwrite realtime subscriptions
+    // For now, return a no-op unsubscribe function
+    console.log('Real-time chat subscription not implemented yet');
+    return () => {};
   }
 }
 

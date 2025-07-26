@@ -13,6 +13,7 @@ import JoinGroupModal from '../../components/group_management/joinGroupModal';
 import { Group } from '../../components/group_management/types';
 import { groupsService } from '../../services/groupsService';
 import { userService } from '../../services/userService';
+import { avatarUploadService } from '../../services/avatarUploadService';
 
 const CreateGroupsScreen = () => {
   // ALL HOOKS MUST BE AT THE TOP AND CALLED UNCONDITIONALLY
@@ -65,6 +66,9 @@ const CreateGroupsScreen = () => {
       const currentUserId = await userService.getOrCreateUserId();
       setUserId(currentUserId);
       
+      // Sync user profile to all existing groups (this will update user names)
+      await groupsService.syncUserProfileToAllGroups(currentUserId);
+      
       // Load user's groups
       await loadUserGroups(currentUserId);
     } catch (error) {
@@ -105,7 +109,7 @@ const CreateGroupsScreen = () => {
       setIsLoading(true);
       const shareKey = generateShareKey();
       
-      // Create group in Appwrite
+      // Create group in Appwrite (this now automatically creates membership)
       const newGroup = await groupsService.createGroup({
         name: groupName,
         shareKey: shareKey,
@@ -119,7 +123,8 @@ const CreateGroupsScreen = () => {
       setShowShareKey(true);
       
     } catch (error) {
-      throw new Error('Error handling create group: ' + error);
+      console.error('Error handling create group:', error);
+      Alert.alert('Error', 'Failed to create group. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -127,36 +132,46 @@ const CreateGroupsScreen = () => {
 
   // Handle joining a group
   const handleJoinGroup = async (shareKey: string) => {
-  if (!userId) {
-    Alert.alert('Error', 'User session not initialized');
-    return;
-  }
-
-  try {
-    setIsLoading(true);
-    
-    // Join group and create membership record
-    const joinedGroup = await groupsService.joinGroup(shareKey, userId);
-    
-    // Check if user is already in this group locally
-    const isAlreadyMember = groups.some(group => group.id === joinedGroup.id);
-    
-    if (isAlreadyMember) {
-      Alert.alert('Already a Member', `You're already a member of "${joinedGroup.name}".`);
-      setShowJoinGroupModal(false);
+    if (!userId) {
+      Alert.alert('Error', 'User session not initialized');
       return;
     }
 
-    // Add group to user's list
-    setGroups(prevGroups => [...prevGroups, joinedGroup]);
-    setShowJoinGroupModal(false);
-    
-  } catch (error) {
-      throw new Error('Error handling' + error);
-  } finally {
-    setIsLoading(false);
-  }
-};
+    try {
+      setIsLoading(true);
+      
+      // Join group and create membership record (now with proper user name)
+      const joinedGroup = await groupsService.joinGroup(shareKey, userId);
+      
+      // Check if user is already in this group locally
+      const isAlreadyMember = groups.some(group => group.id === joinedGroup.id);
+      
+      if (isAlreadyMember) {
+        Alert.alert('Already a Member', `You're already a member of "${joinedGroup.name}".`);
+        setShowJoinGroupModal(false);
+        return;
+      }
+
+      // Add group to user's list
+      setGroups(prevGroups => [...prevGroups, joinedGroup]);
+      setShowJoinGroupModal(false);
+      
+      Alert.alert('Success', `You've joined "${joinedGroup.name}"!`);
+      
+    } catch (error) {
+      console.error('Error handling join group:', error);
+      
+      if (error.message.includes('Already a member')) {
+        Alert.alert('Already a Member', 'You are already a member of this group.');
+      } else if (error.message.includes('Group not found')) {
+        Alert.alert('Invalid Share Key', 'No group found with this share key. Please check and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to join group. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleCopyShareKey = () => {
     Clipboard.setString(newGroupShareKey);
@@ -193,10 +208,12 @@ const CreateGroupsScreen = () => {
       setGroups(prevGroups => prevGroups.filter(group => group.id !== selectedGroupForDeletion.id));
       setShowDeleteConfirmation(false);
       setSelectedGroupForDeletion(null);
+      Alert.alert('Deleted', `"${selectedGroupForDeletion.name}" has been deleted.`);
     } catch (error) {
-        throw new Error('error deleting group: ' + error);
+      console.error('Error deleting group:', error);
+      Alert.alert('Error', 'Failed to delete group. Please try again.');
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 

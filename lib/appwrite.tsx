@@ -11,7 +11,7 @@ export const appwriteConfig = {
   groupMembersCollectionId: process.env.EXPO_PUBLIC_APPWRITE_GROUP_MEMBERS_COLLECTION_ID || '',
   calendarEntriesCollectionId: process.env.EXPO_PUBLIC_APPWRITE_CALENDAR_ENTRIES_COLLECTION_ID || '',
   chatMessagesCollectionId: process.env.EXPO_PUBLIC_APPWRITE_CHAT_MESSAGES_COLLECTION_ID || '',
-  avatarBucketId: process.env.EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID || '',
+  avatarBucketId: process.env.EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID || '', 
 };
 
 // Validate that core environment variables are present
