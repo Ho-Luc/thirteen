@@ -20,6 +20,7 @@ import UserAvatarPicker from '../../components/calendar/userAvatarPicker';
 import WeekHeader from '../../components/calendar/weekHeader';
 import UserCalendarRow from '../../components/calendar/userCalendarRow';
 import ChatWindow from '../../components/calendar/chatWindow';
+import { storage, appwriteConfig } from '../../lib/appwrite';
 
 interface GroupMember {
   id: string;
@@ -71,6 +72,67 @@ const GroupCalendar = () => {
   // Get screen dimensions
   const screenHeight = Dimensions.get('window').height;
   const chatHeight = screenHeight * 0.33; // 33% of screen height
+
+  const debugAvatarDisplay = () => {
+  console.log('\n🔍 DEBUGGING AVATAR DISPLAY...');
+  
+  groupMembers.forEach((member, index) => {
+    console.log(`\n👤 Member ${index + 1}: ${member.userName}`);
+    console.log(`🆔 User ID: ${member.userId}`);
+    console.log(`🖼️ Has Avatar URL: ${!!member.avatarUrl}`);
+    console.log(`📏 Avatar URL Length: ${member.avatarUrl?.length || 0}`);
+    console.log(`🔗 Avatar URL: ${member.avatarUrl || 'NONE'}`);
+    
+    if (member.avatarUrl) {
+      // Test if URL is accessible
+      console.log('🌐 Testing URL accessibility...');
+      fetch(member.avatarUrl, { method: 'HEAD' })
+        .then(response => {
+          console.log(`✅ ${member.userName} URL accessible: ${response.ok} (${response.status})`);
+          console.log(`📋 Content-Type: ${response.headers.get('content-type')}`);
+        })
+        .catch(error => {
+          console.log(`❌ ${member.userName} URL failed: ${error.message}`);
+        });
+    }
+  });
+};
+
+const fixBrokenAvatar = async () => {
+  try {
+    console.log('🔧 FIXING BROKEN AVATAR...');
+    
+    const iosUser = groupMembers.find(m => m.userName === 'New iOS user');
+    if (!iosUser?.avatarUrl) {
+      console.log('❌ No iOS user avatar to fix');
+      return;
+    }
+    
+    // Extract file ID from broken URL
+    const fileIdMatch = iosUser.avatarUrl.match(/files\/([a-f0-9]+)\/view/);
+    if (!fileIdMatch) {
+      console.log('❌ Could not extract file ID from URL');
+      return;
+    }
+    
+    const brokenFileId = fileIdMatch[1];
+    console.log('🗑️ Deleting broken file:', brokenFileId);
+    
+    // Delete the broken file
+    await storage.deleteFile(appwriteConfig.avatarBucketId, brokenFileId);
+    console.log('✅ Broken file deleted');
+    
+    // Clear the broken URL from database
+    await calendarService.updateUserAvatar(iosUser.userId, params.groupId, '');
+    console.log('✅ Broken URL cleared from database');
+    
+    console.log('🎯 iOS user can now re-upload their avatar');
+    
+  } catch (error) {
+    console.error('❌ Fix failed:', error);
+  }
+};
+
 
   // Get current week dates
   const getCurrentWeek = () => {
@@ -411,6 +473,22 @@ const GroupCalendar = () => {
         {params.groupName && (
           <Text style={styles.groupName}>{params.groupName}</Text>
         )}
+        {__DEV__ && (
+  <TouchableOpacity
+    style={[styles.debugButton, { backgroundColor: '#00ff00' }]}
+    onPress={debugAvatarDisplay}
+  >
+    <Text style={styles.debugButtonText}>🔍 Debug Display</Text>
+  </TouchableOpacity>
+)}
+{__DEV__ && (
+  <TouchableOpacity
+    style={[styles.debugButton, { backgroundColor: '#ff4444' }]}
+    onPress={fixBrokenAvatar}
+  >
+    <Text style={styles.debugButtonText}>🔧 Fix Avatar</Text>
+  </TouchableOpacity>
+)}
         {__DEV__ && (
           <TouchableOpacity
             style={styles.debugButton}

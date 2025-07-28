@@ -1,10 +1,5 @@
-// services/avatarLoggingService.ts
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
 
-/**
- * Enhanced logging service to debug avatar URL field size discrepancies
- * Focuses on detailed logging without UI elements
- */
 export class AvatarLoggingService {
   
   /**
@@ -94,21 +89,22 @@ export class AvatarLoggingService {
       // Get the member record directly from database
       const response = await databases.listDocuments(
         appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        [
-          databases.Query?.equal('userId', userId) || `equal("userId", "${userId}")`,
-          databases.Query?.equal('groupId', groupId) || `equal("groupId", "${groupId}")`
-        ]
+        appwriteConfig.groupMembersCollectionId
       );
       
-      console.log(`📊 Query results: ${response.documents.length} documents found`);
+      // Filter manually to avoid Query import issues
+      const memberDocs = response.documents.filter(doc => 
+        doc.userId === userId && doc.groupId === groupId
+      );
       
-      if (response.documents.length === 0) {
+      console.log(`📊 Query results: ${memberDocs.length} documents found`);
+      
+      if (memberDocs.length === 0) {
         console.log(`❌ No membership record found for user ${userId} in group ${groupId}`);
         return;
       }
       
-      const memberDoc = response.documents[0];
+      const memberDoc = memberDocs[0];
       console.log('\n📋 RAW MEMBER DOCUMENT:');
       console.log('Document ID:', memberDoc.$id);
       console.log('User ID:', memberDoc.userId);
@@ -132,113 +128,7 @@ export class AvatarLoggingService {
   }
   
   /**
-   * Comprehensive logging during avatar update process
-   */
-  static async logAvatarUpdate(userId: string, groupId: string, newAvatarUrl: string): Promise<void> {
-    console.log('\n💾 AVATAR UPDATE PROCESS LOGGING...');
-    console.log(`👤 User ID: ${userId}`);
-    console.log(`🏷️ Group ID: ${groupId}`);
-    console.log(`🔗 New Avatar URL: ${newAvatarUrl}`);
-    console.log(`📏 New URL Length: ${newAvatarUrl.length} characters`);
-    
-    // Log before update
-    console.log('\n📋 BEFORE UPDATE:');
-    await this.inspectMemberAvatar(userId, groupId);
-    
-    // Perform the update with detailed logging
-    try {
-      console.log('\n🔄 PERFORMING UPDATE...');
-      
-      // Find the membership record
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        [
-          databases.Query?.equal('userId', userId) || `equal("userId", "${userId}")`,
-          databases.Query?.equal('groupId', groupId) || `equal("groupId", "${groupId}")`
-        ]
-      );
-      
-      if (response.documents.length === 0) {
-        console.log('❌ No membership record found for update');
-        return;
-      }
-      
-      const memberDoc = response.documents[0];
-      console.log(`📝 Updating document: ${memberDoc.$id}`);
-      
-      // Perform the update
-      const updatePayload = { avatarUrl: newAvatarUrl };
-      console.log('📤 Update payload:', updatePayload);
-      
-      const updatedDoc = await databases.updateDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        memberDoc.$id,
-        updatePayload
-      );
-      
-      console.log('\n✅ UPDATE COMPLETED');
-      console.log('📥 Updated document avatar URL:', updatedDoc.avatarUrl);
-      console.log('📏 Stored URL length:', updatedDoc.avatarUrl?.length || 0);
-      console.log('🔍 URL matches sent:', updatedDoc.avatarUrl === newAvatarUrl ? 'YES ✅' : 'NO ❌');
-      
-      if (updatedDoc.avatarUrl !== newAvatarUrl) {
-        console.log('\n🚨 MISMATCH DETECTED:');
-        console.log(`📤 Sent (${newAvatarUrl.length} chars): "${newAvatarUrl}"`);
-        console.log(`📥 Stored (${updatedDoc.avatarUrl?.length || 0} chars): "${updatedDoc.avatarUrl}"`);
-        
-        // Check if it's a truncation issue
-        if (updatedDoc.avatarUrl && newAvatarUrl.startsWith(updatedDoc.avatarUrl)) {
-          console.log('🔍 TRUNCATION CONFIRMED: URL was cut off during storage');
-          console.log(`📏 Actual field limit appears to be: ${updatedDoc.avatarUrl.length} characters`);
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Avatar update failed:', error);
-    }
-    
-    // Log after update
-    console.log('\n📋 AFTER UPDATE:');
-    await this.inspectMemberAvatar(userId, groupId);
-  }
-  
-  /**
-   * Test the upload and storage pipeline end-to-end with logging
-   */
-  static async testUploadPipeline(testImageUri: string, userId: string, groupId: string): Promise<void> {
-    console.log('\n🧪 TESTING COMPLETE UPLOAD PIPELINE...');
-    console.log(`📁 Test image: ${testImageUri}`);
-    console.log(`👤 User: ${userId}`);
-    console.log(`🏷️ Group: ${groupId}`);
-    
-    try {
-      // Import services for testing
-      const { improvedAvatarUploadService } = await import('./improvedAvatarUploadService');
-      
-      console.log('\n🚀 Starting upload with enhanced logging...');
-      const result = await improvedAvatarUploadService.uploadAvatarWithValidation(
-        testImageUri,
-        userId,
-        groupId
-      );
-      
-      console.log('\n📊 UPLOAD RESULT:');
-      console.log('Success:', result.success);
-      console.log('Avatar URL:', result.avatarUrl);
-      console.log('Original Length:', result.originalLength);
-      console.log('Truncated:', result.truncated);
-      console.log('Error:', result.error);
-      console.log('Warnings:', result.warnings);
-      
-    } catch (error) {
-      console.error('❌ Pipeline test failed:', error);
-    }
-  }
-  
-  /**
-   * Compare what we think the field size is vs. what it actually is
+   * Validate field size assumptions without circular imports
    */
   static async validateFieldSizeAssumptions(): Promise<void> {
     console.log('\n🔍 VALIDATING FIELD SIZE ASSUMPTIONS...');
@@ -329,11 +219,3 @@ export class AvatarLoggingService {
     }
   }
 }
-
-// Export convenience functions for easy use
-export const testFieldCapacity = () => AvatarLoggingService.testActualFieldCapacity();
-export const inspectAvatar = (userId: string, groupId: string) => 
-  AvatarLoggingService.inspectMemberAvatar(userId, groupId);
-export const logAvatarUpdate = (userId: string, groupId: string, avatarUrl: string) =>
-  AvatarLoggingService.logAvatarUpdate(userId, groupId, avatarUrl);
-export const validateFieldAssumptions = () => AvatarLoggingService.validateFieldSizeAssumptions();

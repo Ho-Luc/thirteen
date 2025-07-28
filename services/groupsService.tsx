@@ -1,19 +1,17 @@
-// services/groupsService.ts
+// services/groupsService.tsx - Complete file with fixed imports and error handling
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
 import { userProfileService } from './userProfileService';
-import { runDatabaseDiagnostics } from '../utils/databaseDebug';
-import { runFieldSizeTests } from '../utils/databaseFieldTest';
+import { avatarUploadService } from './avatarUploadService'; // Fixed import
 import { 
   GroupRecord, 
   GroupMemberRecord, 
   CreateGroupPayload, 
-  CreateGroupMemberPayload,
   Group 
 } from '../utils/database';
 
 /**
  * Service for managing groups and group memberships
- * Follows DRY principles and implements proper error handling
+ * Enhanced with comprehensive error handling and non-blocking avatar uploads
  */
 class GroupsService {
   /**
@@ -25,7 +23,8 @@ class GroupsService {
     createdBy: string;
   }): Promise<Group> {
     try {
-      console.log('🚀 Creating group with data:', groupData);
+      console.log('\n🚀 CREATING GROUP...');
+      console.log('📋 Group Data:', groupData);
       
       // Create group document
       const groupPayload: CreateGroupPayload = {
@@ -34,6 +33,7 @@ class GroupsService {
         createdBy: groupData.createdBy,
       };
 
+      console.log('📤 Creating group document...');
       const groupResponse = await databases.createDocument<GroupRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupsCollectionId,
@@ -44,16 +44,6 @@ class GroupsService {
       console.log('✅ Group created successfully:', groupResponse.$id);
 
       console.log('🔗 Creating membership for group creator...');
-      
-      // Run diagnostics if in development mode
-      if (__DEV__) {
-        console.log('🧪 Running database diagnostics...');
-        await runDatabaseDiagnostics(groupData.createdBy, groupResponse.$id);
-        
-        console.log('🔬 Testing database field sizes...');
-        await runFieldSizeTests();
-      }
-      
       await this.createMembership({
         userId: groupData.createdBy,
         groupId: groupResponse.$id,
@@ -62,63 +52,68 @@ class GroupsService {
       console.log('✅ Group creation process completed');
       return this.transformGroupRecord(groupResponse);
     } catch (error) {
-      console.error('❌ Error creating group:', error);
+      console.error('❌ Group creation failed:', error);
       throw new Error('Failed to create group. Please try again.');
     }
   }
 
   /**
-   * Create group membership with user profile data
+   * Create group membership with non-blocking avatar handling
    */
   private async createMembership(membershipData: {
     userId: string;
     groupId: string;
   }): Promise<void> {
     try {
-      console.log('📝 Starting membership creation for:', membershipData);
+      console.log('\n📝 CREATING MEMBERSHIP...');
+      console.log('👤 User ID:', membershipData.userId);
+      console.log('🏷️ Group ID:', membershipData.groupId);
       
       // Get user profile for name and avatar
       const userProfile = await userProfileService.getUserProfile();
-      console.log('👤 User profile retrieved:', userProfile);
+      console.log('👤 User profile:', {
+        name: userProfile?.name || 'NOT SET',
+        hasAvatar: !!userProfile?.avatarUri,
+        avatarUriLength: userProfile?.avatarUri?.length || 0
+      });
       
       const userName = userProfile?.name || 'Anonymous User';
       
-      // Handle avatarUrl - upload to cloud storage if it's a local file
+      // Try to process avatar, but don't fail if it doesn't work
       let avatarUrl: string | undefined = undefined;
       
       if (userProfile?.avatarUri && userProfile.avatarUri.trim() !== '') {
         const originalUrl = userProfile.avatarUri;
-        console.log('🖼️ Processing avatar URL:', originalUrl.substring(0, 50) + '...');
+        console.log('🖼️ Processing avatar...');
         
         try {
           if (originalUrl.startsWith('file://')) {
-            console.log('☁️ Uploading local avatar to cloud storage...');
+            console.log('☁️ Uploading local file to cloud...');
             
-            // Import avatarUploadService dynamically to avoid circular imports
-            const { avatarUploadService } = await import('./avatarUploadService');
-            
-            // Upload to Appwrite storage and get cloud URL
-            avatarUrl = await avatarUploadService.uploadAvatar(originalUrl, membershipData.userId);
-            console.log('✅ Avatar uploaded to cloud successfully');
-            console.log(`🔗 Cloud URL length: ${avatarUrl?.length || 0} characters`);
-            
+            // Check if service is available
+            if (typeof avatarUploadService !== 'undefined' && 
+                typeof avatarUploadService.uploadAvatar === 'function') {
+              
+              avatarUrl = await avatarUploadService.uploadAvatar(originalUrl, membershipData.userId);
+              console.log('✅ Avatar uploaded successfully');
+              
+            } else {
+              console.log('⚠️ Avatar upload service not available - skipping');
+            }
           } else if (originalUrl.length <= 500) {
-            // Use existing cloud URL if it's short enough
             avatarUrl = originalUrl;
             console.log('✅ Using existing cloud URL');
           } else {
-            console.log(`⚠️ Avatar URL too long (${originalUrl.length} chars) - skipping`);
-            avatarUrl = undefined;
+            console.log('⚠️ URL too long - skipping');
           }
         } catch (uploadError) {
-          console.error('❌ Avatar upload failed:', uploadError.message || uploadError);
-          console.log('📝 Continuing membership creation without avatar...');
-          // Set avatarUrl to undefined so it's not included in payload
+          console.error('❌ Avatar upload failed:', uploadError.message);
+          console.log('📝 Continuing without avatar...');
           avatarUrl = undefined;
         }
       }
 
-      // Build payload - start with required fields only
+      // Build membership payload
       const membershipPayload: any = {
         userId: membershipData.userId,
         groupId: membershipData.groupId,
@@ -126,17 +121,15 @@ class GroupsService {
         userName: userName,
       };
 
-      // Only include avatarUrl if we have a valid, short value
-      if (avatarUrl && avatarUrl.trim() !== '' && avatarUrl.length <= 100) {
+      // Only include avatar if we have one
+      if (avatarUrl) {
         membershipPayload.avatarUrl = avatarUrl;
-        console.log('✅ Including valid avatar URL in payload');
+        console.log('✅ Including avatar in membership');
       } else {
-        console.log('ℹ️ Skipping avatar URL - will create membership without avatar');
+        console.log('ℹ️ Creating membership without avatar');
       }
 
-      console.log('📤 Sending membership payload (avatar status: ' + (avatarUrl ? 'included' : 'skipped') + ')');
-      console.log('🎯 Target collection:', appwriteConfig.groupMembersCollectionId);
-
+      // Create membership document
       const membershipResponse = await databases.createDocument<GroupMemberRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupMembersCollectionId,
@@ -144,24 +137,15 @@ class GroupsService {
         membershipPayload
       );
 
-      console.log('✅ Group membership created successfully:', {
-        membershipId: membershipResponse.$id,
-        userName: userName,
-        hasAvatar: !!avatarUrl,
-        avatarStatus: avatarUrl ? 'cloud URL included' : 'no avatar (upload failed or skipped)',
-        groupId: membershipData.groupId
-      });
+      console.log('✅ Membership created successfully:', membershipResponse.$id);
+      console.log(`🖼️ Avatar included: ${!!membershipResponse.avatarUrl}`);
       
     } catch (error) {
-      console.error('❌ Error creating group membership - Full error details:', error);
-      console.error('📋 Membership data that failed:', membershipData);
-      console.error('🔧 Collection ID being used:', appwriteConfig.groupMembersCollectionId);
-      console.error('🔧 Database ID being used:', appwriteConfig.databaseId);
+      console.error('❌ Membership creation failed:', error);
       
-      // If this is still an avatarUrl error, try once more without avatar
+      // Try fallback without avatar
       if (error.message?.includes('avatarUrl')) {
-        console.log('🔄 Retrying membership creation without avatar...');
-        
+        console.log('🔄 Retrying without avatar...');
         try {
           const fallbackPayload = {
             userId: membershipData.userId,
@@ -177,21 +161,14 @@ class GroupsService {
             fallbackPayload
           );
           
-          console.log('✅ Group membership created successfully on retry (without avatar):', {
-            membershipId: retryResponse.$id,
-            userName: userProfile?.name || 'Anonymous User',
-            groupId: membershipData.groupId
-          });
-          
-          return; // Success on retry
+          console.log('✅ Fallback membership created:', retryResponse.$id);
+          return;
           
         } catch (retryError) {
-          console.error('❌ Retry also failed:', retryError);
-          throw new Error(`Failed to create group membership even without avatar: ${retryError.message || retryError}`);
+          console.error('❌ Fallback also failed:', retryError);
         }
       }
       
-      // Re-throw with more context for other errors
       throw new Error(`Failed to create group membership: ${error.message || error}`);
     }
   }
@@ -201,27 +178,34 @@ class GroupsService {
    */
   async getUserGroups(userId: string): Promise<Group[]> {
     try {
+      console.log(`\n📋 FETCHING USER GROUPS: ${userId}`);
+      
       const [allGroups, userMemberships] = await Promise.all([
         this.getAllGroups(),
         this.getUserMemberships(userId)
       ]);
 
+      console.log(`📊 Found ${allGroups.length} total groups, ${userMemberships.length} memberships`);
+
       // Get created groups
       const createdGroups = allGroups.filter(group => group.createdBy === userId);
+      console.log(`📊 User created ${createdGroups.length} groups`);
 
       // Get joined groups from memberships
       const membershipGroupIds = userMemberships.map(m => m.groupId);
       const joinedGroups = allGroups.filter(group => 
         membershipGroupIds.includes(group.$id)
       );
+      console.log(`📊 User joined ${joinedGroups.length} groups`);
 
       // Combine and deduplicate
       const allUserGroups = [...createdGroups, ...joinedGroups];
       const uniqueGroups = this.deduplicateGroups(allUserGroups);
+      console.log(`📊 Total unique groups: ${uniqueGroups.length}`);
 
       return uniqueGroups.map(this.transformGroupRecord);
     } catch (error) {
-      console.error('Error fetching user groups:', error);
+      console.error('❌ Error fetching user groups:', error);
       throw new Error('Failed to fetch groups. Please try again.');
     }
   }
@@ -231,25 +215,33 @@ class GroupsService {
    */
   async joinGroup(shareKey: string, userId: string): Promise<Group> {
     try {
+      console.log(`\n🚪 JOINING GROUP: ${shareKey}`);
+      
       const group = await this.findGroupByShareKey(shareKey);
       if (!group) {
+        console.log('❌ Group not found');
         throw new Error('Group not found');
       }
 
+      console.log('✅ Group found:', group.name);
+
       const isAlreadyMember = await this.checkMembership(userId, group.$id);
       if (isAlreadyMember) {
+        console.log('❌ Already a member');
         throw new Error('Already a member');
       }
 
+      console.log('✅ Creating membership...');
       await this.createMembership({
         userId: userId,
         groupId: group.$id,
       });
 
+      console.log('✅ Successfully joined group');
       return this.transformGroupRecord(group);
     } catch (error) {
-      console.error('Error joining group:', error);
-      throw error; // Re-throw to preserve specific error messages
+      console.error('❌ Error joining group:', error);
+      throw error;
     }
   }
 
@@ -258,6 +250,8 @@ class GroupsService {
    */
   async deleteGroup(groupId: string): Promise<void> {
     try {
+      console.log(`\n🗑️ DELETING GROUP: ${groupId}`);
+      
       // Delete group memberships first
       await this.deleteGroupMemberships(groupId);
       
@@ -267,8 +261,10 @@ class GroupsService {
         appwriteConfig.groupsCollectionId,
         groupId
       );
+
+      console.log('✅ Group deleted successfully');
     } catch (error) {
-      console.error('Error deleting group:', error);
+      console.error('❌ Error deleting group:', error);
       throw new Error('Failed to delete group. Please try again.');
     }
   }
@@ -286,65 +282,84 @@ class GroupsService {
 
       return this.transformGroupRecord(response);
     } catch (error) {
-      console.error('Error fetching group:', error);
+      console.error('❌ Error fetching group:', error);
       throw new Error('Failed to fetch group. Please try again.');
     }
   }
 
   /**
-   * Sync user profile to all group memberships
+   * Sync user profile to all group memberships - NON-BLOCKING VERSION
    */
   async syncUserProfileToAllGroups(userId: string): Promise<void> {
     try {
+      console.log(`\n🔄 SYNCING USER PROFILE TO ALL GROUPS: ${userId}`);
+      
       const userProfile = await userProfileService.getUserProfile();
       if (!userProfile) {
-        console.warn('No user profile found for sync');
+        console.warn('⚠️ No user profile found for sync');
         return;
       }
+
+      console.log('👤 Profile to sync:', {
+        name: userProfile.name,
+        hasAvatar: !!userProfile.avatarUri,
+        avatarLength: userProfile.avatarUri?.length || 0
+      });
 
       const memberships = await this.getUserMemberships(userId);
       console.log(`🔄 Syncing profile for ${memberships.length} group memberships`);
 
-      // Process avatar URL - upload if it's a local file
+      // Try to process avatar, but don't fail the entire sync if it doesn't work
       let avatarUrl: string | null = null;
+      
       if (userProfile.avatarUri && userProfile.avatarUri.trim() !== '') {
         const originalUrl = userProfile.avatarUri;
-        console.log('🖼️ Processing avatar for sync:', originalUrl.substring(0, 50) + '...');
+        console.log(`🖼️ Processing avatar for sync...`);
         
         try {
           if (originalUrl.startsWith('file://')) {
-            console.log('☁️ Uploading local avatar to cloud storage during sync...');
+            console.log('☁️ Attempting avatar upload (non-blocking)...');
             
-            // Import and use avatar upload service
-            const { avatarUploadService } = await import('./avatarUploadService');
-            avatarUrl = await avatarUploadService.uploadAvatar(originalUrl, userId);
-            
-            console.log('✅ Avatar uploaded during sync successfully');
-            console.log(`🔗 Cloud URL length: ${avatarUrl.length} characters`);
+            // Check if service is available before using it
+            if (typeof avatarUploadService !== 'undefined' && 
+                typeof avatarUploadService.uploadAvatar === 'function') {
+              
+              // Set timeout to prevent hanging
+              const uploadPromise = avatarUploadService.uploadAvatar(originalUrl, userId);
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Upload timeout')), 15000)
+              );
+              
+              avatarUrl = await Promise.race([uploadPromise, timeoutPromise]);
+              console.log('✅ Avatar uploaded during sync');
+              
+            } else {
+              console.log('⚠️ Avatar upload service not available during sync');
+              throw new Error('avatarUploadService is not available');
+            }
             
           } else if (originalUrl.length <= 500) {
-            // Use existing cloud URL if it's short enough
             avatarUrl = originalUrl;
             console.log('✅ Using existing cloud URL for sync');
           } else {
-            console.warn(`Avatar URL too long (${originalUrl.length} chars) - skipping in sync`);
+            console.warn('⚠️ Avatar URL too long - skipping in sync');
             avatarUrl = null;
           }
         } catch (uploadError) {
-          console.error('❌ Avatar upload failed during sync:', uploadError);
-          console.log('📝 Continuing sync without avatar...');
-          avatarUrl = null; // Continue without avatar
+          console.error('❌ Avatar upload failed during sync:', uploadError.message);
+          console.log('📝 Continuing sync without avatar - user can upload later');
+          avatarUrl = null;
         }
       }
 
-      // Update all memberships
+      // Update all memberships (proceed regardless of avatar result)
       const updatePromises = memberships.map(async (membership) => {
         try {
           const updatePayload: any = {
             userName: userProfile.name,
           };
 
-          // Only include avatarUrl if we have a valid value
+          // Only include avatar if upload was successful
           if (avatarUrl) {
             updatePayload.avatarUrl = avatarUrl;
           }
@@ -372,6 +387,8 @@ class GroupsService {
       
     } catch (error) {
       console.error('❌ Error syncing user profile to groups:', error);
+      console.log('⚠️ Continuing with app functionality despite sync error');
+      // Don't throw - let the user proceed even if sync fails
     }
   }
 

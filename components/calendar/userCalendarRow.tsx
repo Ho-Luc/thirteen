@@ -1,3 +1,4 @@
+// components/calendar/userCalendarRow.tsx - Complete file with debugging
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 
@@ -40,9 +41,16 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
 }) => {
   const streak = getUserStreak(member.userId);
 
+  // DETAILED AVATAR RENDERING DEBUG
+  console.log(`\n🎨 RENDERING ROW FOR: ${member.userName}`);
+  console.log(`🖼️ Avatar URL exists: ${!!member.avatarUrl}`);
+  console.log(`📏 Avatar URL length: ${member.avatarUrl?.length || 0}`);
+  console.log(`🔗 Avatar URL: ${member.avatarUrl?.substring(0, 80)}...`);
+  console.log(`🎯 Will render: ${member.avatarUrl ? 'Image Component' : 'Default Avatar'}`);
+
   return (
     <View style={styles.userRow}>
-      {/* Avatar */}
+      {/* Enhanced Avatar with Debugging */}
       <TouchableOpacity
         style={styles.avatarContainer}
         onPress={onAvatarPress}
@@ -50,11 +58,35 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
         activeOpacity={isCurrentUser ? 0.7 : 1}
       >
         {member.avatarUrl ? (
-          <Image source={{ uri: member.avatarUrl }} style={styles.avatar} />
+          <>
+            {console.log(`📱 Creating Image component for ${member.userName}`)}
+            <Image 
+              source={{ uri: member.avatarUrl }} 
+              style={styles.avatar}
+              onLoadStart={() => console.log(`🔄 ${member.userName}: Image load started`)}
+              onLoad={(event) => {
+                console.log(`✅ ${member.userName}: Image loaded successfully`);
+                console.log(`📐 Image dimensions: ${event.nativeEvent.source.width}x${event.nativeEvent.source.height}`);
+              }}
+              onLoadEnd={() => console.log(`🏁 ${member.userName}: Image load ended`)}
+              onError={(error) => {
+                console.log(`❌ ${member.userName}: Image failed to load`);
+                console.log(`🔍 Error details:`, error.nativeEvent);
+                console.log(`🔗 Failed URL: ${member.avatarUrl}`);
+              }}
+              onProgress={(event) => {
+                console.log(`📊 ${member.userName}: Loading progress ${event.nativeEvent.loaded}/${event.nativeEvent.total}`);
+              }}
+              resizeMode="cover"
+            />
+          </>
         ) : (
-          <View style={styles.defaultAvatar}>
-            <Text style={styles.defaultAvatarText}>👤</Text>
-          </View>
+          <>
+            {console.log(`👤 Creating default avatar for ${member.userName}`)}
+            <View style={styles.defaultAvatar}>
+              <Text style={styles.defaultAvatarText}>👤</Text>
+            </View>
+          </>
         )}
       </TouchableOpacity>
 
