@@ -1,3 +1,6 @@
+// Fix 1: Clean up the my-groups/index.tsx imports
+// Remove the problematic avatarUploadService import
+
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Clipboard, Alert } from "react-native";
 import { useRouter, useNavigation } from "expo-router";
@@ -13,7 +16,7 @@ import JoinGroupModal from '../../components/group_management/joinGroupModal';
 import { Group } from '../../components/group_management/types';
 import { groupsService } from '../../services/groupsService';
 import { userService } from '../../services/userService';
-import { avatarUploadService } from '../../services/avatarUploadService';
+// REMOVED: import { avatarUploadService } from '../../services/avatarUploadService';
 
 const CreateGroupsScreen = () => {
   // ALL HOOKS MUST BE AT THE TOP AND CALLED UNCONDITIONALLY
@@ -66,7 +69,7 @@ const CreateGroupsScreen = () => {
       const currentUserId = await userService.getOrCreateUserId();
       setUserId(currentUserId);
       
-      // Sync user profile to all existing groups (this will update user names)
+      // Sync user profile to all existing groups (NAME ONLY - no avatars)
       await groupsService.syncUserProfileToAllGroups(currentUserId);
       
       // Load user's groups

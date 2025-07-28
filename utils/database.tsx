@@ -1,4 +1,4 @@
-// types/database.ts
+// utils/database.tsx - Fixed version without circular imports
 
 /**
  * Database document base interface with Appwrite system fields
@@ -13,15 +13,28 @@ export interface AppwriteDocument {
 }
 
 /**
+ * Groups Collection Schema
+ */
+export interface GroupDocument {
+  name: string;        // required
+  shareKey: string;    // required
+  createdBy: string;   // required
+}
+
+/**
+ * Full Group with Appwrite system fields
+ */
+export interface GroupRecord extends GroupDocument, AppwriteDocument {}
+
+/**
  * Group Members Collection Schema
- * Based on actual Appwrite collection structure
  */
 export interface GroupMemberDocument {
   userId: string;      // required
   groupId: string;     // required  
   joinedAt: string;    // required (Datetime as ISO string)
-  userName: string;    // required (to be added to collection)
-  avatarUrl?: string;  // optional (to be added to collection)
+  userName: string;    // required
+  avatarUrl?: string;  // optional
 }
 
 /**
@@ -46,20 +59,6 @@ export interface ChatMessageDocument {
 export interface ChatMessageRecord extends ChatMessageDocument, AppwriteDocument {}
 
 /**
- * Groups Collection Schema
- */
-export interface GroupDocument {
-  name: string;        // required
-  shareKey: string;    // required
-  createdBy: string;   // required
-}
-
-/**
- * Full Group with Appwrite system fields
- */
-export interface GroupRecord extends GroupDocument, AppwriteDocument {}
-
-/**
  * Calendar Entries Collection Schema
  */
 export interface CalendarEntryDocument {
@@ -77,6 +76,13 @@ export interface CalendarEntryRecord extends CalendarEntryDocument, AppwriteDocu
 /**
  * Application-level interfaces (transformed from database)
  */
+export interface Group {
+  id: string;
+  name: string;
+  shareKey: string;
+  createdAt: Date;
+}
+
 export interface GroupMember {
   id: string;
   userId: string;
@@ -94,13 +100,6 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export interface Group {
-  id: string;
-  name: string;
-  shareKey: string;
-  createdAt: Date;
-}
-
 export interface CalendarEntry {
   id: string;
   userId: string;
@@ -113,6 +112,12 @@ export interface CalendarEntry {
 /**
  * Document creation payloads (what we send to Appwrite)
  */
+export interface CreateGroupPayload {
+  name: string;
+  shareKey: string;
+  createdBy: string;
+}
+
 export interface CreateGroupMemberPayload {
   userId: string;
   groupId: string;
@@ -127,12 +132,6 @@ export interface CreateChatMessagePayload {
   userName: string;
   message: string;
   timestamp: string;
-}
-
-export interface CreateGroupPayload {
-  name: string;
-  shareKey: string;
-  createdBy: string;
 }
 
 export interface CreateCalendarEntryPayload {

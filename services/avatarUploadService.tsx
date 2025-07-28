@@ -1,3 +1,8 @@
+// services/avatarUploadService.tsx - Complete implementation
+import { storage, appwriteConfig, generateId } from '../lib/appwrite';
+import { imageCompressionService } from './imageCompressionService';
+import * as FileSystem from 'expo-file-system';
+
 class AvatarUploadService {
   
   async uploadAvatar(
@@ -13,19 +18,19 @@ class AvatarUploadService {
       const sourceFileInfo = await FileSystem.getInfoAsync(imageUri);
       console.log('📋 Source file info:', {
         exists: sourceFileInfo.exists,
-        size: sourceFileInfo.size,
-        isDirectory: sourceFileInfo.isDirectory
+        size: 'size' in sourceFileInfo ? sourceFileInfo.size : 'unknown',
+        isDirectory: 'isDirectory' in sourceFileInfo ? sourceFileInfo.isDirectory : false
       });
       
       if (!sourceFileInfo.exists) {
         throw new Error('Source image file does not exist');
       }
       
-      if (sourceFileInfo.size === 0) {
+      if ('size' in sourceFileInfo && sourceFileInfo.size === 0) {
         throw new Error('Source image file is empty');
       }
       
-      console.log(`✅ Source file verified: ${(sourceFileInfo.size / 1024).toFixed(2)} KB`);
+      console.log(`✅ Source file verified: ${('size' in sourceFileInfo ? (sourceFileInfo.size / 1024).toFixed(2) : 'unknown')} KB`);
       
       // Step 2: Compress the image
       const compressedUri = await this.compressAvatarImage(imageUri);
@@ -35,10 +40,10 @@ class AvatarUploadService {
       const compressedFileInfo = await FileSystem.getInfoAsync(compressedUri);
       console.log('📋 Compressed file info:', {
         exists: compressedFileInfo.exists,
-        size: compressedFileInfo.size
+        size: 'size' in compressedFileInfo ? compressedFileInfo.size : 'unknown'
       });
       
-      if (compressedFileInfo.size === 0) {
+      if ('size' in compressedFileInfo && compressedFileInfo.size === 0) {
         throw new Error('Compressed image file is empty');
       }
       
@@ -72,7 +77,7 @@ class AvatarUploadService {
       
       return publicUrl;
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Enhanced avatar upload failed:', error);
       throw new Error(`Failed to upload avatar: ${error.message || error}`);
     }
@@ -134,7 +139,7 @@ class AvatarUploadService {
         size: blob.size,
         type: 'image/jpeg',
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Enhanced file preparation failed:', error);
       throw new Error(`Failed to prepare file: ${error.message}`);
     }
@@ -188,7 +193,7 @@ class AvatarUploadService {
       });
       
       return response.$id;
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Enhanced storage upload failed:', error);
       throw error;
     }
@@ -218,29 +223,66 @@ class AvatarUploadService {
       }
       
       console.log('✅ File verification passed');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ File verification failed:', error);
       throw new Error(`Uploaded file verification failed: ${error.message}`);
     }
   }
 
-  // Keep existing helper methods
+  // Compress avatar image
   private async compressAvatarImage(imageUri: string): Promise<string> {
     return await imageCompressionService.compressForAvatar(imageUri);
   }
 
+  // Generate unique filename for avatar
   private generateAvatarFileName(userId: string): string {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8);
     return `avatar_${userId}_${timestamp}_${random}.jpg`;
   }
 
+  // Get public URL for uploaded file
   private getPublicUrl(fileId: string): string {
     try {
       const url = storage.getFileView(appwriteConfig.avatarBucketId, fileId);
       return url.toString();
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(`Failed to generate public URL: ${error.message}`);
     }
   }
+
+  // Delete old avatar file from storage
+  async deleteOldAvatar(avatarUrl: string): Promise<void> {
+    try {
+      if (!avatarUrl || !avatarUrl.includes('/files/')) {
+        console.log('⚠️ Invalid avatar URL for deletion:', avatarUrl);
+        return;
+      }
+
+      // Extract file ID from URL
+      const urlParts = avatarUrl.split('/files/');
+      if (urlParts.length < 2) {
+        console.log('⚠️ Could not extract file ID from URL:', avatarUrl);
+        return;
+      }
+
+      const fileIdPart = urlParts[1].split('/')[0];
+      
+      if (!fileIdPart) {
+        console.log('⚠️ Empty file ID extracted from URL:', avatarUrl);
+        return;
+      }
+
+      console.log('🗑️ Deleting old avatar file:', fileIdPart);
+      
+      await storage.deleteFile(appwriteConfig.avatarBucketId, fileIdPart);
+      console.log('✅ Old avatar deleted successfully');
+    } catch (error: any) {
+      // Don't throw error for old avatar deletion to avoid blocking new avatar upload
+      console.warn('⚠️ Failed to delete old avatar (non-critical):', error.message);
+    }
+  }
 }
+
+// Export a singleton instance
+export const avatarUploadService = new AvatarUploadService();

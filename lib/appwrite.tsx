@@ -1,17 +1,17 @@
-// lib/appwrite.tsx
+// lib/appwrite.tsx - Updated with proper avatar bucket configuration
 import { Client, Databases, Account, ID, Query, Storage } from 'appwrite';
 
 // Load configuration from environment variables
 export const appwriteConfig = {
   endpoint: process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT || 'https://nyc.cloud.appwrite.io/v1',
-  platform: process.env.EXPO_PUBLIC_APPWRITE_PLATFORM || 'com.yourapp.thirteen',
+  platform: process.env.EXPO_PUBLIC_APPWRITE_PLATFORM || 'com.ios.thirteen',
   projectId: process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID || '',
   databaseId: process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID || '',
   groupsCollectionId: process.env.EXPO_PUBLIC_APPWRITE_GROUPS_COLLECTION_ID || '',
   groupMembersCollectionId: process.env.EXPO_PUBLIC_APPWRITE_GROUP_MEMBERS_COLLECTION_ID || '',
   calendarEntriesCollectionId: process.env.EXPO_PUBLIC_APPWRITE_CALENDAR_ENTRIES_COLLECTION_ID || '',
   chatMessagesCollectionId: process.env.EXPO_PUBLIC_APPWRITE_CHAT_MESSAGES_COLLECTION_ID || '',
-  avatarBucketId: process.env.EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID || '', 
+  avatarBucketId: process.env.EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID || '',
 };
 
 // Validate that core environment variables are present
@@ -41,6 +41,14 @@ const validateConfig = () => {
   if (missingOptional.length > 0) {
     console.log(`Optional Appwrite collections not configured: ${missingOptional.join(', ')}`);
     console.log('These features will use mock data until collections are created');
+  }
+
+  // Validate bucket configuration
+  if (!appwriteConfig.avatarBucketId) {
+    console.warn('⚠️ Avatar bucket not configured - avatar uploads will fail');
+    console.warn('Please set EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID in your .env file');
+  } else {
+    console.log('✅ Avatar bucket configured:', appwriteConfig.avatarBucketId);
   }
 };
 
