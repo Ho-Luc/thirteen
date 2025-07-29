@@ -1,4 +1,4 @@
-// app/group_calendar/index.tsx
+// app/group_calendar/index.tsx - Updated with proper screen proportions for TODO #4
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -10,6 +10,7 @@ import {
   Platform,
   Dimensions,
   TouchableOpacity,
+  TextInput, // Added TextInput back
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { calendarService } from '../../services/calendarService';
@@ -68,10 +69,13 @@ const GroupCalendar = () => {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
+  const [newMessage, setNewMessage] = useState<string>(''); // Added state for input
 
-  // Get screen dimensions
+  // Get screen dimensions and calculate layout proportions - ENSURE INPUT VISIBILITY
   const screenHeight = Dimensions.get('window').height;
-  const chatHeight = screenHeight * 0.33; // 33% of screen height
+  const headerHeight = screenHeight * 0.12; // 12% for week header (reduced)
+  const calendarRowsHeight = screenHeight * 0.28; // 28% for user calendar rows (reduced)
+  const chatHeight = screenHeight * 0.60; // 60% for chat (increased significantly)
 
   // Get current week dates
   const getCurrentWeek = () => {
@@ -385,6 +389,15 @@ const GroupCalendar = () => {
     }
   };
 
+  // Handle input message send
+  const handleSendMessage = () => {
+    const trimmedMessage = newMessage.trim();
+    if (trimmedMessage === '' || isSendingMessage) return;
+    
+    sendMessage(trimmedMessage);
+    setNewMessage(''); // Clear input after sending
+  };
+
   const renderUserRow = (member: GroupMember) => {
     const isCurrentUser = member.userId === currentUserId;
     
@@ -423,49 +436,75 @@ const GroupCalendar = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.currentDate}>{getCurrentDateString()}</Text>
-        {params.groupName && (
-          <Text style={styles.groupName}>{params.groupName}</Text>
-        )}
+      {/* Week Header - 12% of screen */}
+      <View style={[styles.weekHeaderContainer, { height: headerHeight }]}>
+        <WeekHeader
+          weekDays={weekDays}
+          currentWeek={currentWeek}
+          getDayCompletionData={getDayCompletionData}
+          currentDate={getCurrentDateString()}
+        />
       </View>
 
-      {/* Week Header - Progressive completion circles */}
-      <WeekHeader
-        weekDays={weekDays}
-        currentWeek={currentWeek}
-        getDayCompletionData={getDayCompletionData}
-      />
+      {/* User Calendar Rows - 28% of screen */}
+      <View style={[styles.userRowsContainer, { height: calendarRowsHeight }]}>
+        <ScrollView 
+          style={styles.userRowsScrollView} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.userRowsContent}
+        >
+          {groupMembers.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>
+                No group members found. Make sure you've joined this group or that members have been added.
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                Group ID: {params.groupId}
+              </Text>
+            </View>
+          ) : (
+            groupMembers.map((member) => renderUserRow(member))
+          )}
+        </ScrollView>
+      </View>
 
-      {/* User Calendar Rows - Scrollable 2/3 */}
-      <ScrollView 
-        style={styles.userRowsContainer} 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.userRowsContent}
-      >
-        {groupMembers.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.emptyStateText}>
-              No group members found. Make sure you've joined this group or that members have been added.
-            </Text>
-            <Text style={styles.emptyStateSubtext}>
-              Group ID: {params.groupId}
-            </Text>
-          </View>
-        ) : (
-          groupMembers.map((member) => renderUserRow(member))
-        )}
-      </ScrollView>
-
-      {/* Chat Window - Bottom 1/3 */}
+      {/* Chat Window - 60% of screen - BIGGER FOR INPUT */}
       <View style={[styles.chatContainer, { height: chatHeight }]}>
-        <ChatWindow
-          messages={chatMessages}
-          currentUserId={currentUserId}
-          onSendMessage={sendMessage}
-          isLoading={isSendingMessage}
-        />
+        <View style={styles.chatHeader}>
+          <Text style={styles.chatTitle}>{params.groupName} Chat</Text>
+        </View>
+        
+        <ScrollView style={styles.messagesArea}>
+          {chatMessages.map((message) => (
+            <View key={message.id} style={styles.messageRow}>
+              <Text style={styles.messageText}>
+                {message.userName}: {message.message}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+        
+        {/* INPUT AREA - FORCED TO BOTTOM */}
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.messageInput}
+            placeholder="Send a message"
+            value={newMessage}
+            onChangeText={setNewMessage}
+            returnKeyType="send"
+            onSubmitEditing={handleSendMessage}
+            editable={!isSendingMessage}
+          />
+          <TouchableOpacity 
+            style={styles.sendButton}
+            onPress={handleSendMessage}
+            disabled={isSendingMessage || newMessage.trim() === ''}
+          >
+            <Text style={styles.sendButtonText}>
+              {isSendingMessage ? '...' : 'Send'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Avatar Picker Modal */}
@@ -494,34 +533,94 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
   },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 8,
+  weekHeaderContainer: {
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#e0e0e0',
-  },
-  currentDate: {
-    fontSize: 16,
-    color: '#4287f5',
-    marginBottom: 2,
-  },
-  groupName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingTop: 0, // Remove all top padding
+    paddingBottom: 8, // Minimal bottom padding
   },
   userRowsContainer: {
-    height: '50%', // Fixed height - 50% of available space
     backgroundColor: '#fff',
+    overflow: 'hidden', // Ensure content doesn't overflow
+  },
+  userRowsScrollView: {
+    flex: 1,
   },
   userRowsContent: {
     paddingBottom: 10,
+    paddingRight: 15, // Added margin to the right of user calendar rows
   },
   chatContainer: {
     borderTopWidth: 2,
     borderTopColor: '#e0e0e0',
-    // Height will be set dynamically via inline style
+    backgroundColor: '#fff',
+  },
+  chatHeader: {
+    height: 50,
+    paddingHorizontal: 15,
+    justifyContent: 'center',
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  chatTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  messagesArea: {
+    flex: 1,
+    paddingHorizontal: 15,
+    paddingBottom: 90, // Reserve space for absolutely positioned input
+  },
+  messageRow: {
+    paddingVertical: 8,
+  },
+  messageText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  inputRow: {
+    height: 80, // Increased height for visibility
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    borderTopWidth: 3, // Thicker border to make it obvious
+    borderTopColor: '#4287f5', // Blue border to make it obvious
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa', // Light background to make it stand out
+    position: 'absolute', // Force it to bottom
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  messageInput: {
+    flex: 1,
+    height: 50,
+    borderWidth: 3, // Thick border to make it obvious
+    borderColor: '#4287f5',
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    marginRight: 10,
+    backgroundColor: '#fff',
+    fontSize: 16,
+  },
+  sendButton: {
+    height: 50,
+    backgroundColor: '#4287f5',
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   emptyStateContainer: {
     flex: 1,
