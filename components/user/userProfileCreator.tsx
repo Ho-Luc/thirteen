@@ -1,3 +1,4 @@
+// components/user/userProfileCreator.tsx - Updated with auto cloud upload
 import React, { useState } from 'react';
 import {
   View,
@@ -11,6 +12,8 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { imageCompressionService } from '../../services/imageCompressionService';
+import { autoCloudUploadService } from '../../services/autoCloudUploadService';
+import { userService } from '../../services/userService';
 
 export interface UserProfile {
   name: string;
@@ -125,19 +128,51 @@ const UserProfileCreator: React.FC<UserProfileCreatorProps> = ({
     }
   };
 
-  // Handle form submission
-  const handleSubmit = () => {
+  // Handle form submission with auto cloud upload
+  const handleSubmit = async () => {
     if (inputName.trim() === '') {
       Alert.alert('Error', 'Please enter your name');
       return;
     }
 
-    const profile: UserProfile = {
-      name: inputName.trim(),
-      avatarUri: selectedAvatarUri || undefined,
-    };
+    try {
+      setIsProcessing(true);
+      
+      const profile: UserProfile = {
+        name: inputName.trim(),
+        avatarUri: selectedAvatarUri || undefined,
+      };
 
-    onProfileCreated(profile);
+      // Save profile locally first
+      onProfileCreated(profile);
+      
+      // If this is an update and user is in groups, sync avatar to cloud
+      if (isEditing && selectedAvatarUri) {
+        try {
+          console.log('🔄 Profile updated - syncing avatar to all groups...');
+          
+          // Get current user ID
+          const userId = await userService.getOrCreateUserId();
+          
+          // Process avatar for all groups (non-blocking)
+          autoCloudUploadService.processUserAvatar(userId).then(() => {
+            console.log('✅ Avatar synced to all groups in background');
+          }).catch((error) => {
+            console.warn('⚠️ Background avatar sync failed:', error.message);
+          });
+          
+        } catch (syncError: any) {
+          console.warn('⚠️ Avatar sync failed (non-critical):', syncError.message);
+          // Don't show error to user - this is background enhancement
+        }
+      }
+      
+    } catch (error: any) {
+      console.error('Profile save error:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Handle form cancellation
@@ -207,6 +242,18 @@ const UserProfileCreator: React.FC<UserProfileCreatorProps> = ({
               )}
             </View>
           </View>
+          
+          {/* Enhanced info text for group visibility */}
+          {selectedAvatarUri && (
+            <View style={styles.infoSection}>
+              <Text style={styles.infoText}>
+                ✅ Your avatar will be visible to all group members
+              </Text>
+              <Text style={styles.infoSubtext}>
+                Avatar will be automatically uploaded to cloud storage for group sharing
+              </Text>
+            </View>
+          )}
           
           {/* Name Input Section */}
           <Text style={styles.modalSubtitle}>
@@ -336,6 +383,25 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: '#cccccc',
+  },
+  infoSection: {
+    backgroundColor: '#e8f5e8',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#28a745',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#155724',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  infoSubtext: {
+    fontSize: 12,
+    color: '#6c757d',
+    lineHeight: 16,
   },
   modalSubtitle: {
     fontSize: 16,

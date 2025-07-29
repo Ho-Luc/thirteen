@@ -1,7 +1,6 @@
-// services/avatarUploadService.tsx - Complete implementation
+// services/avatarUploadService.tsx - Simplified React Native compatible version
 import { storage, appwriteConfig, generateId } from '../lib/appwrite';
 import { imageCompressionService } from './imageCompressionService';
-import * as FileSystem from 'expo-file-system';
 
 class AvatarUploadService {
   
@@ -11,227 +10,148 @@ class AvatarUploadService {
     onProgress?: (progress: any) => void
   ): Promise<string> {
     try {
-      console.log('🚀 Starting ENHANCED avatar upload process...');
+      console.log('🚀 Starting simplified avatar upload for React Native...');
       console.log('📁 Original image URI:', imageUri);
       
-      // Step 1: Verify source file exists and has content
-      const sourceFileInfo = await FileSystem.getInfoAsync(imageUri);
-      console.log('📋 Source file info:', {
-        exists: sourceFileInfo.exists,
-        size: 'size' in sourceFileInfo ? sourceFileInfo.size : 'unknown',
-        isDirectory: 'isDirectory' in sourceFileInfo ? sourceFileInfo.isDirectory : false
-      });
-      
-      if (!sourceFileInfo.exists) {
-        throw new Error('Source image file does not exist');
-      }
-      
-      if ('size' in sourceFileInfo && sourceFileInfo.size === 0) {
-        throw new Error('Source image file is empty');
-      }
-      
-      console.log(`✅ Source file verified: ${('size' in sourceFileInfo ? (sourceFileInfo.size / 1024).toFixed(2) : 'unknown')} KB`);
-      
-      // Step 2: Compress the image
+      // Step 1: Compress the image
       const compressedUri = await this.compressAvatarImage(imageUri);
-      console.log('✂️ Image compressed successfully');
+      console.log('✂️ Image compressed successfully:', compressedUri);
       
-      // Step 3: Verify compressed file
-      const compressedFileInfo = await FileSystem.getInfoAsync(compressedUri);
-      console.log('📋 Compressed file info:', {
-        exists: compressedFileInfo.exists,
-        size: 'size' in compressedFileInfo ? compressedFileInfo.size : 'unknown'
-      });
-      
-      if ('size' in compressedFileInfo && compressedFileInfo.size === 0) {
-        throw new Error('Compressed image file is empty');
-      }
-      
-      // Step 4: Enhanced file preparation with validation
-      const fileData = await this.prepareFileForUploadEnhanced(compressedUri);
-      console.log('📦 File prepared for upload:', {
-        size: `${(fileData.size / 1024).toFixed(2)} KB`,
-        type: fileData.type,
-        blobSize: fileData.blob.size
-      });
-      
-      // Step 5: Validate blob has content
-      if (fileData.blob.size === 0) {
-        throw new Error('Prepared blob is empty - file preparation failed');
-      }
-      
-      // Step 6: Generate filename and upload
+      // Step 2: Generate filename
       const fileName = this.generateAvatarFileName(userId);
       console.log('📝 Generated filename:', fileName);
       
-      // Step 7: Enhanced upload with content validation
-      const fileId = await this.uploadToStorageEnhanced(fileData.blob, fileName, fileData.type);
+      // Step 3: Use Appwrite SDK with simple file object
+      const fileId = await this.uploadToAppwriteSimple(compressedUri, fileName);
       console.log('☁️ Uploaded to storage with ID:', fileId);
       
-      // Step 8: Verify uploaded file has content
-      await this.verifyUploadedFile(fileId);
-      
-      // Step 9: Generate and return URL
+      // Step 4: Generate and return URL
       const publicUrl = this.getPublicUrl(fileId);
       console.log('🔗 Public URL generated:', publicUrl);
       
       return publicUrl;
       
     } catch (error: any) {
-      console.error('❌ Enhanced avatar upload failed:', error);
+      console.error('❌ Simplified avatar upload failed:', error);
       throw new Error(`Failed to upload avatar: ${error.message || error}`);
     }
   }
 
-  // Enhanced file preparation with better validation
-  private async prepareFileForUploadEnhanced(imageUri: string): Promise<{
-    blob: Blob;
-    size: number;
-    type: string;
-  }> {
-    try {
-      console.log('📤 Enhanced file preparation starting...');
-      console.log('📁 Processing URI:', imageUri);
-      
-      // Get file info first
-      const fileInfo = await FileSystem.getInfoAsync(imageUri);
-      console.log('📋 File info:', fileInfo);
-      
-      if (!fileInfo.exists) {
-        throw new Error('Image file not found during preparation');
-      }
-
-      // Read file as base64 first to verify content
-      console.log('📖 Reading file as base64...');
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      console.log(`📏 Base64 length: ${base64.length} characters`);
-      
-      if (base64.length === 0) {
-        throw new Error('File content is empty (base64 read failed)');
-      }
-      
-      // Convert base64 to blob
-      console.log('🔄 Converting base64 to blob...');
-      const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'image/jpeg' });
-      
-      console.log('📦 Blob created:', {
-        size: blob.size,
-        type: blob.type
-      });
-      
-      if (blob.size === 0) {
-        throw new Error('Blob creation resulted in empty file');
-      }
-      
-      return {
-        blob,
-        size: blob.size,
-        type: 'image/jpeg',
-      };
-    } catch (error: any) {
-      console.error('❌ Enhanced file preparation failed:', error);
-      throw new Error(`Failed to prepare file: ${error.message}`);
-    }
-  }
-
-  // Enhanced upload with explicit content type
-  private async uploadToStorageEnhanced(
-    blob: Blob,
-    fileName: string,
-    contentType: string
+  // Simplified upload using direct file URI
+  private async uploadToAppwriteSimple(
+    imageUri: string,
+    fileName: string
   ): Promise<string> {
     try {
-      console.log('☁️ Enhanced storage upload starting...');
+      console.log('☁️ Simplified Appwrite upload...');
       console.log('📋 Upload details:', {
         fileName,
-        blobSize: blob.size,
-        contentType,
+        imageUri: imageUri.substring(0, 50) + '...',
         bucketId: appwriteConfig.avatarBucketId
       });
       
-      // Create File object with explicit type
-      const file = new File([blob], fileName, { 
-        type: contentType,
-        lastModified: Date.now()
-      });
+      // Generate unique file ID
+      const fileId = generateId();
       
-      console.log('📁 File object created:', {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified
-      });
+      // Create simple file object for React Native
+      const fileObject = {
+        name: fileName,
+        type: 'image/jpeg',
+        uri: imageUri,
+      };
       
-      if (file.size === 0) {
-        throw new Error('File object is empty before upload');
+      console.log('📤 Calling Appwrite createFile with simple object...');
+      
+      try {
+        const response = await storage.createFile(
+          appwriteConfig.avatarBucketId,
+          fileId,
+          fileObject
+        );
+        
+        console.log('✅ Upload successful:', {
+          fileId: response.$id,
+          name: response.name,
+          sizeUploaded: response.sizeOriginal,
+          mimeType: response.mimeType
+        });
+        
+        return response.$id;
+        
+      } catch (appwriteError: any) {
+        console.error('❌ Appwrite upload error details:', {
+          message: appwriteError.message,
+          code: appwriteError.code,
+          type: appwriteError.type
+        });
+        
+        // Try alternative approach with FormData
+        console.log('🔄 Trying alternative FormData approach...');
+        return await this.uploadWithFormData(imageUri, fileName, fileId);
       }
       
-      // Upload with detailed logging
-      console.log('📤 Initiating Appwrite storage upload...');
-      const response = await storage.createFile(
-        appwriteConfig.avatarBucketId,
-        generateId(),
-        file
-      );
-      
-      console.log('✅ Upload response:', {
-        fileId: response.$id,
-        name: response.name,
-        sizeUploaded: response.sizeOriginal,
-        mimeType: response.mimeType
-      });
-      
-      return response.$id;
     } catch (error: any) {
-      console.error('❌ Enhanced storage upload failed:', error);
+      console.error('❌ Simplified upload failed:', error);
       throw error;
     }
   }
 
-  // Verify uploaded file has content
-  private async verifyUploadedFile(fileId: string): Promise<void> {
+  // Alternative upload using FormData
+  private async uploadWithFormData(
+    imageUri: string,
+    fileName: string,
+    fileId: string
+  ): Promise<string> {
     try {
-      console.log('🔍 Verifying uploaded file...');
+      console.log('📤 Using FormData upload approach...');
       
-      // Get file info from Appwrite
-      const fileInfo = await storage.getFile(appwriteConfig.avatarBucketId, fileId);
-      console.log('📋 Uploaded file info:', {
-        id: fileInfo.$id,
-        name: fileInfo.name,
-        size: fileInfo.sizeOriginal,
-        mimeType: fileInfo.mimeType
+      // Create FormData
+      const formData = new FormData();
+      formData.append('fileId', fileId);
+      formData.append('file', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: fileName,
+      } as any);
+      
+      // Manual upload using fetch (if Appwrite SDK fails)
+      const endpoint = `${appwriteConfig.endpoint}/storage/buckets/${appwriteConfig.avatarBucketId}/files`;
+      
+      console.log('🌐 Manual upload endpoint:', endpoint);
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-Appwrite-Project': appwriteConfig.projectId,
+        },
+        body: formData,
       });
       
-      if (fileInfo.sizeOriginal === 0) {
-        console.error('🚨 UPLOADED FILE IS EMPTY!');
-        throw new Error('File uploaded successfully but contains no data');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       
-      if (!fileInfo.mimeType?.startsWith('image/')) {
-        console.warn('⚠️ Uploaded file has wrong MIME type:', fileInfo.mimeType);
-      }
+      const result = await response.json();
+      console.log('✅ FormData upload successful:', result);
       
-      console.log('✅ File verification passed');
+      return result.$id;
+      
     } catch (error: any) {
-      console.error('❌ File verification failed:', error);
-      throw new Error(`Uploaded file verification failed: ${error.message}`);
+      console.error('❌ FormData upload failed:', error);
+      throw new Error(`FormData upload failed: ${error.message}`);
     }
   }
 
-  // Compress avatar image
+  // Compress avatar image with error handling
   private async compressAvatarImage(imageUri: string): Promise<string> {
-    return await imageCompressionService.compressForAvatar(imageUri);
+    try {
+      return await imageCompressionService.compressForAvatar(imageUri);
+    } catch (error: any) {
+      console.warn('⚠️ Image compression failed, using original:', error.message);
+      // Return original URI if compression fails
+      return imageUri;
+    }
   }
 
   // Generate unique filename for avatar
@@ -248,6 +168,33 @@ class AvatarUploadService {
       return url.toString();
     } catch (error: any) {
       throw new Error(`Failed to generate public URL: ${error.message}`);
+    }
+  }
+
+  // Test method to verify upload capabilities
+  async testUploadCapability(): Promise<boolean> {
+    try {
+      console.log('🧪 Testing upload capability...');
+      
+      // Check if required services are available
+      if (!appwriteConfig.avatarBucketId) {
+        console.log('❌ No avatar bucket configured');
+        return false;
+      }
+      
+      // Test storage connection
+      try {
+        await storage.listFiles(appwriteConfig.avatarBucketId, [], 1);
+        console.log('✅ Storage connection working');
+        return true;
+      } catch (storageError: any) {
+        console.log('❌ Storage connection failed:', storageError.message);
+        return false;
+      }
+      
+    } catch (error: any) {
+      console.log('❌ Upload capability test failed:', error.message);
+      return false;
     }
   }
 

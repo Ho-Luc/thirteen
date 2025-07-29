@@ -1,7 +1,7 @@
-// services/calendarService.tsx - Complete enhanced version with logging
+// services/calendarService.tsx - Complete enhanced version with fixed avatar handling
 import { databases, appwriteConfig, generateId, storage, Query } from '../lib/appwrite';
 import { fixAvatarUrls } from '../utils/avatarUrlFixer';
-import { AvatarLoggingService } from './avatarLoggingService';
+import * as FileSystem from 'expo-file-system';
 
 export interface GroupMember {
   id: string;
@@ -36,10 +36,10 @@ export interface ChatMessage {
 }
 
 class CalendarService {
-  // Get all members of a group - REAL DATABASE VERSION
+  // Get all members of a group - FIXED VERSION
   async getGroupMembers(groupId: string): Promise<GroupMember[]> {
     try {
-      console.log('\n📋 GETTING GROUP MEMBERS WITH ENHANCED LOGGING...');
+      console.log('\n📋 GETTING GROUP MEMBERS WITH FIXED AVATAR HANDLING...');
       console.log('🏷️ Group ID:', groupId);
       console.log('🗃️ Collection:', appwriteConfig.groupMembersCollectionId);
       console.log('🗃️ Database:', appwriteConfig.databaseId);
@@ -57,7 +57,7 @@ class CalendarService {
         return [];
       }
 
-      // Process each member with detailed logging
+      // Process each member with FIXED logging
       const members = response.documents.map((doc: any, index: number) => {
         console.log(`\n👤 Member ${index + 1}:`);
         console.log('  Document ID:', doc.$id);
@@ -67,20 +67,30 @@ class CalendarService {
         console.log('  Avatar URL Length:', doc.avatarUrl?.length || 0);
         console.log('  Joined At:', doc.joinedAt || doc.$createdAt);
         
-        // Analyze avatar URL if present
+        // FIXED: Better avatar analysis that doesn't incorrectly flag local files
         if (doc.avatarUrl) {
           const urlLength = doc.avatarUrl.length;
-          const looksLikeTruncation = urlLength === 100 || 
-                                     doc.avatarUrl.endsWith('projec') ||
-                                     !doc.avatarUrl.includes('?project=');
+          const isLocalFile = doc.avatarUrl.startsWith('file://');
+          const isCloudUrl = doc.avatarUrl.startsWith('http');
           
           console.log('  Avatar Analysis:');
           console.log(`    Length: ${urlLength} chars`);
-          console.log(`    Truncated: ${looksLikeTruncation ? 'LIKELY ⚠️' : 'NO ✅'}`);
+          console.log(`    Type: ${isLocalFile ? 'Local File' : isCloudUrl ? 'Cloud URL' : 'Unknown'}`);
           
-          if (looksLikeTruncation) {
-            console.log('    🚨 POTENTIAL TRUNCATION DETECTED');
-            console.log('    💡 This avatar may not display correctly');
+          // Only check for truncation on cloud URLs
+          if (isCloudUrl) {
+            const looksLikeTruncation = urlLength === 100 || 
+                                       doc.avatarUrl.endsWith('projec') ||
+                                       !doc.avatarUrl.includes('?project=');
+            
+            console.log(`    Truncated: ${looksLikeTruncation ? 'LIKELY ⚠️' : 'NO ✅'}`);
+            
+            if (looksLikeTruncation) {
+              console.log('    🚨 POTENTIAL CLOUD URL TRUNCATION DETECTED');
+              console.log('    💡 This avatar may not display correctly');
+            }
+          } else if (isLocalFile) {
+            console.log('    Status: ✅ Local file - should display correctly');
           }
         }
 
@@ -94,7 +104,7 @@ class CalendarService {
         };
       });
 
-      // Fix any truncated avatar URLs
+      // Fix any truncated avatar URLs (this will now preserve local file URLs)
       const membersWithFixedUrls = fixAvatarUrls(members);
 
       console.log('\n✅ Group members processing completed');
@@ -110,7 +120,7 @@ class CalendarService {
     }
   }
 
-  // Get calendar entries for a specific week - REAL DATABASE VERSION
+  // Get calendar entries for a specific week
   async getCalendarEntries(groupId: string, weekDates: Date[]): Promise<CalendarEntry[]> {
     try {
       const startDate = weekDates[0].toISOString().split('T')[0];
@@ -144,7 +154,7 @@ class CalendarService {
     }
   }
 
-  // Create a new calendar entry - REAL DATABASE VERSION
+  // Create a new calendar entry
   async createCalendarEntry(entryData: {
     userId: string;
     groupId: string;
@@ -177,7 +187,7 @@ class CalendarService {
     }
   }
 
-  // Update an existing calendar entry - REAL DATABASE VERSION
+  // Update an existing calendar entry
   async updateCalendarEntry(entryId: string, completed: boolean): Promise<CalendarEntry> {
     try {
       console.log(`🔄 Updating calendar entry ${entryId} to completed: ${completed}`);
@@ -214,10 +224,6 @@ class CalendarService {
     console.log(`📏 URL Length: ${avatarUrl.length} characters`);
     console.log(`🗃️ Target Database: ${appwriteConfig.databaseId}`);
     console.log(`🗃️ Target Collection: ${appwriteConfig.groupMembersCollectionId}`);
-    
-    // Log the current state before update
-    console.log('\n📋 INSPECTING CURRENT STATE BEFORE UPDATE...');
-    await AvatarLoggingService.inspectMemberAvatar(userId, groupId);
     
     try {
       console.log('\n🔍 FINDING MEMBERSHIP RECORD...');
@@ -287,44 +293,139 @@ class CalendarService {
           console.log('🔍 TRUNCATION DETECTED: URL was cut off during database storage');
           console.log(`📏 ACTUAL FIELD LIMIT: ${actualUrl.length} characters`);
           console.log('💡 SOLUTION: Increase avatarUrl field size in Appwrite Console');
-          
-          // Test the actual field capacity
-          console.log('\n🧪 Testing actual field capacity to confirm...');
-          await AvatarLoggingService.testActualFieldCapacity();
-        } else if (expectedUrl && !actualUrl) {
-          console.log('🔍 URL was completely rejected or set to null');
-        } else {
-          console.log('🔍 Unknown mismatch type - URLs don\'t match expected patterns');
         }
       } else {
         console.log('✅ Avatar URL stored successfully with no truncation');
       }
-      
-      // Final state inspection
-      console.log('\n📋 FINAL STATE INSPECTION AFTER UPDATE...');
-      await AvatarLoggingService.inspectMemberAvatar(userId, groupId);
       
     } catch (error) {
       console.error('\n❌ AVATAR UPDATE FAILED:');
       console.error('Error message:', error.message);
       console.error('Error details:', error);
       
-      // Try to provide helpful debugging information
-      if (error.message.includes('100') || error.message.includes('too long')) {
-        console.log('\n💡 ERROR ANALYSIS:');
-        console.log('This error suggests the avatarUrl field is still limited to 100 characters');
-        console.log('Actions to take:');
-        console.log('1. Verify in Appwrite Console that the field size was actually updated');
-        console.log('2. Check if you have multiple avatarUrl attributes');
-        console.log('3. Restart Appwrite if using local instance');
-        console.log('4. Clear browser cache if using Appwrite Cloud');
-      }
-      
       throw new Error('Failed to update user avatar');
     }
   }
 
-  // Get user streaks - REAL DATABASE VERSION
+  // Sync user avatar to current group membership with fallback handling
+  async syncCurrentUserAvatar(userId: string, groupId: string): Promise<void> {
+    try {
+      console.log('\n🖼️ SYNCING CURRENT USER AVATAR WITH FALLBACK...');
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`🏷️ Group ID: ${groupId}`);
+      
+      // Get user profile
+      const { userProfileService } = await import('../services/userProfileService');
+      const userProfile = await userProfileService.getUserProfile();
+      
+      if (!userProfile?.avatarUri) {
+        console.log('ℹ️ No avatar to sync - user has no avatar in profile');
+        return;
+      }
+
+      console.log('🖼️ Found avatar to sync:', {
+        avatarLength: userProfile.avatarUri.length,
+        isLocalFile: userProfile.avatarUri.startsWith('file://'),
+        avatarPreview: userProfile.avatarUri.substring(0, 50) + '...'
+      });
+
+      let avatarUrl = userProfile.avatarUri;
+      
+      // Try to upload if it's a local file, but don't fail if upload doesn't work
+      if (userProfile.avatarUri.startsWith('file://')) {
+        try {
+          console.log('☁️ Attempting to upload local file to cloud storage...');
+          
+          // Test upload capability first
+          const { avatarUploadService } = await import('../services/avatarUploadService');
+          const canUpload = await avatarUploadService.testUploadCapability();
+          
+          if (canUpload) {
+            console.log('✅ Upload capability confirmed, proceeding with upload...');
+            avatarUrl = await avatarUploadService.uploadAvatar(userProfile.avatarUri, userId);
+            console.log('✅ Avatar uploaded to cloud successfully');
+            
+            // Update the user profile with the cloud URL
+            const updatedProfile = { ...userProfile, avatarUri: avatarUrl };
+            await userProfileService.saveUserProfile(updatedProfile);
+            console.log('✅ User profile updated with cloud URL');
+            
+          } else {
+            console.log('⚠️ Upload not available, using local file as fallback');
+            // Keep the local file URL as fallback
+          }
+          
+        } catch (uploadError: any) {
+          console.error('❌ Avatar upload failed:', uploadError.message);
+          console.log('📝 Using local file URL as fallback');
+          // Continue with local URL as fallback
+        }
+      } else {
+        console.log('✅ Using existing cloud URL');
+      }
+
+      // Update the user's avatar in this group's membership
+      console.log('📝 Updating group membership with avatar URL...');
+      console.log(`🔗 Avatar URL to save: ${avatarUrl.substring(0, 80)}...`);
+      
+      await this.updateUserAvatar(userId, groupId, avatarUrl);
+      console.log('✅ Avatar synced to group membership successfully');
+      
+    } catch (error: any) {
+      console.error('❌ Avatar sync failed:', error.message);
+      console.log('📝 Continuing without avatar sync');
+      // Don't throw - this is non-critical
+    }
+  }
+
+  // Test avatar display capabilities
+  async testAvatarDisplay(userId: string, groupId: string): Promise<void> {
+    try {
+      console.log('\n🧪 TESTING AVATAR DISPLAY...');
+      
+      // 1. Check user profile
+      const { userProfileService } = await import('../services/userProfileService');
+      const userProfile = await userProfileService.getUserProfile();
+      
+      console.log('👤 User Profile Check:');
+      console.log(`Has Profile: ${!!userProfile}`);
+      console.log(`Has Avatar: ${!!userProfile?.avatarUri}`);
+      console.log(`Avatar URI: ${userProfile?.avatarUri || 'NONE'}`);
+      
+      if (userProfile?.avatarUri) {
+        // Test if the avatar file exists (for local files)
+        if (userProfile.avatarUri.startsWith('file://')) {
+          const fileInfo = await FileSystem.getInfoAsync(userProfile.avatarUri);
+          console.log(`Local File Exists: ${fileInfo.exists}`);
+          console.log(`File Size: ${'size' in fileInfo ? fileInfo.size : 'unknown'}`);
+        }
+      }
+      
+      // 2. Check group membership
+      const members = await this.getGroupMembers(groupId);
+      const currentUserMember = members.find(m => m.userId === userId);
+      
+      console.log('👥 Group Membership Check:');
+      console.log(`Found Member: ${!!currentUserMember}`);
+      console.log(`Member Avatar: ${currentUserMember?.avatarUrl || 'NONE'}`);
+      
+      // 3. Test upload service
+      try {
+        const { avatarUploadService } = await import('../services/avatarUploadService');
+        const canUpload = await avatarUploadService.testUploadCapability();
+        console.log(`Upload Service Available: ${canUpload}`);
+      } catch (serviceError: any) {
+        console.log(`Upload Service Error: ${serviceError.message}`);
+      }
+      
+      console.log('✅ Avatar display test completed');
+      
+    } catch (error: any) {
+      console.error('❌ Avatar display test failed:', error);
+    }
+  }
+
+  // Get user streaks
   async getUserStreaks(groupId: string): Promise<UserStreak[]> {
     try {
       console.log(`📊 Calculating user streaks for group ${groupId}`);
@@ -405,55 +506,7 @@ class CalendarService {
     };
   }
 
-  // Upload and compress image file - REAL STORAGE VERSION
-  async uploadAndCompressImage(imageUri: string, fileName: string): Promise<string> {
-    try {
-      console.log(`📤 Uploading image: ${fileName}`);
-      
-      // Convert URI to File object for upload
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      
-      // Upload to Appwrite storage
-      const uploadResponse = await storage.createFile(
-        appwriteConfig.avatarBucketId,
-        generateId(),
-        blob
-      );
-
-      console.log(`✅ Image uploaded with ID: ${uploadResponse.$id}`);
-
-      // Return the file URL
-      const fileUrl = storage.getFileView(appwriteConfig.avatarBucketId, uploadResponse.$id);
-      const urlString = fileUrl.toString();
-      
-      console.log(`🔗 Generated URL: ${urlString} (${urlString.length} chars)`);
-      
-      return urlString;
-    } catch (error) {
-      console.error('❌ Image upload failed:', error);
-      throw new Error('Failed to upload image');
-    }
-  }
-
-  // Delete old avatar when updating - REAL STORAGE VERSION
-  async deleteOldAvatar(oldAvatarUrl: string): Promise<void> {
-    try {
-      console.log(`🗑️ Deleting old avatar: ${oldAvatarUrl}`);
-      
-      // Extract file ID from URL
-      const urlParts = oldAvatarUrl.split('/');
-      const fileId = urlParts[urlParts.length - 1];
-      
-      await storage.deleteFile(appwriteConfig.avatarBucketId, fileId);
-      console.log('✅ Old avatar deleted successfully');
-    } catch (error) {
-      // Don't throw error for old avatar deletion to avoid blocking new avatar upload
-      console.warn('⚠️ Failed to delete old avatar:', error);
-    }
-  }
-
-  // Get chat messages for a group - REAL DATABASE VERSION
+  // Get chat messages for a group
   async getChatMessages(groupId: string, limit: number = 50): Promise<ChatMessage[]> {
     try {
       console.log(`💬 Fetching chat messages for group ${groupId} (limit: ${limit})`);
@@ -463,7 +516,7 @@ class CalendarService {
         appwriteConfig.chatMessagesCollectionId,
         [
           Query.equal('groupId', groupId),
-          Query.orderDesc('timestamp'), // Order by custom timestamp field
+          Query.orderDesc('timestamp'),
           Query.limit(limit)
         ]
       );
@@ -477,19 +530,18 @@ class CalendarService {
           userId: doc.userId,
           userName: doc.userName || 'Anonymous User',
           message: doc.message,
-          timestamp: new Date(doc.timestamp || doc.$createdAt), // Use custom timestamp or fallback to $createdAt
+          timestamp: new Date(doc.timestamp || doc.$createdAt),
         }))
-        .reverse(); // Reverse to show oldest messages first
+        .reverse();
 
       return messages;
     } catch (error) {
       console.error('❌ Error fetching chat messages:', error);
-      // Return empty array instead of throwing to prevent chat from breaking the whole calendar
       return [];
     }
   }
 
-  // Send a chat message - REAL DATABASE VERSION
+  // Send a chat message
   async sendChatMessage(
     groupId: string, 
     userId: string, 
@@ -521,7 +573,7 @@ class CalendarService {
           userId: userId,
           userName: userName,
           message: message.trim(),
-          timestamp: timestamp, // Add the required timestamp field
+          timestamp: timestamp,
         }
       );
 
@@ -543,7 +595,7 @@ class CalendarService {
     }
   }
 
-  // Delete a chat message - REAL DATABASE VERSION
+  // Delete a chat message
   async deleteChatMessage(messageId: string, userId: string): Promise<void> {
     try {
       // First, get the message to verify ownership
@@ -572,48 +624,8 @@ class CalendarService {
     }
   }
 
-  // Get recent chat messages with pagination - REAL DATABASE VERSION
-  async getRecentChatMessages(
-    groupId: string, 
-    limit: number = 20, 
-    offset: number = 0
-  ): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId,
-        [
-          Query.equal('groupId', groupId),
-          Query.orderDesc('timestamp'), // Order by custom timestamp field
-          Query.limit(limit + 1), // Get one extra to check if there are more
-          Query.offset(offset)
-        ]
-      );
-
-      const hasMore = response.documents.length > limit;
-      const documents = hasMore ? response.documents.slice(0, limit) : response.documents;
-
-      const messages = documents
-        .map((doc: any) => ({
-          id: doc.$id,
-          userId: doc.userId,
-          userName: doc.userName || 'Anonymous User',
-          message: doc.message,
-          timestamp: new Date(doc.timestamp || doc.$createdAt), // Use custom timestamp or fallback
-        }))
-        .reverse(); // Reverse to show oldest first
-
-      return { messages, hasMore };
-    } catch (error) {
-      console.error('❌ Error fetching recent chat messages:', error);
-      return { messages: [], hasMore: false };
-    }
-  }
-
-  // Subscribe to real-time chat updates (if using Appwrite realtime)
+  // Subscribe to real-time chat updates (placeholder)
   subscribeToChat(groupId: string, callback: (message: ChatMessage) => void): () => void {
-    // This would require setting up Appwrite realtime subscriptions
-    // For now, return a no-op unsubscribe function
     console.log('ℹ️ Real-time chat subscription not implemented yet');
     return () => {};
   }

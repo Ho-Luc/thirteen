@@ -34,7 +34,32 @@ class UserProfileService {
       return false;
     }
   }
-
+  async debugUserProfile(): Promise<void> {
+    try {
+      console.log('\n🔍 DEBUGGING USER PROFILE...');
+      
+      const profile = await this.getUserProfile();
+      
+      if (!profile) {
+        console.log('❌ No user profile found');
+        return;
+      }
+      
+      console.log('👤 User Profile Details:');
+      console.log(`Name: ${profile.name}`);
+      console.log(`Has Avatar: ${!!profile.avatarUri}`);
+      console.log(`Avatar URI: ${profile.avatarUri || 'NONE'}`);
+      console.log(`Avatar Length: ${profile.avatarUri?.length || 0} characters`);
+      
+      if (profile.avatarUri) {
+        console.log(`Avatar Type: ${profile.avatarUri.startsWith('file://') ? 'Local File' : 'Cloud URL'}`);
+        console.log(`Avatar Preview: ${profile.avatarUri.substring(0, 100)}...`);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Failed to debug user profile:', error);
+    }
+  }
   /**
    * Update existing user profile
    */

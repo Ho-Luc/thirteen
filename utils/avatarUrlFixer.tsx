@@ -1,4 +1,5 @@
-// utils/avatarUrlFixer.ts
+// utils/avatarUrlFixer.tsx - Fixed to handle local file URLs properly
+
 import { appwriteConfig } from '../lib/appwrite';
 
 /**
@@ -44,70 +45,74 @@ export class AvatarUrlFixer {
   }
   
   /**
-   * Process avatar URL with repair if needed
+   * Process avatar URL with repair if needed - FIXED VERSION
    */
   static processAvatarUrl(avatarUrl: string | null | undefined): string | undefined {
     if (!avatarUrl) {
       return undefined;
     }
 
-    // If URL looks complete, use as-is
-    if (avatarUrl.includes('?project=') && avatarUrl.length > 100) {
-      console.log('✅ Avatar URL looks complete, using as-is');
+    console.log(`🔍 Processing avatar URL: ${avatarUrl.substring(0, 80)}...`);
+
+    // HANDLE LOCAL FILE URLS - Don't try to "fix" these
+    if (avatarUrl.startsWith('file://')) {
+      console.log('📁 Local file URL detected - keeping as-is');
       return avatarUrl;
     }
 
-    // Try to repair if truncated
-    const repairedUrl = this.repairTruncatedUrl(avatarUrl);
-    if (repairedUrl) {
-      console.log('🔧 Avatar URL repaired successfully');
-      return repairedUrl;
+    // HANDLE CLOUD URLS
+    if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+      // If URL looks complete, use as-is
+      if (avatarUrl.includes('?project=') && avatarUrl.length > 100) {
+        console.log('✅ Cloud URL looks complete, using as-is');
+        return avatarUrl;
+      }
+
+      // Try to repair if truncated
+      const repairedUrl = this.repairTruncatedUrl(avatarUrl);
+      if (repairedUrl) {
+        console.log('🔧 Cloud URL repaired successfully');
+        return repairedUrl;
+      }
+
+      // If we can't repair but it's a cloud URL, log warning but keep it
+      console.warn('⚠️ Could not repair cloud URL, but keeping it:', avatarUrl.substring(0, 50));
+      return avatarUrl;
     }
 
-    // If we can't repair, log the issue but don't break the app
-    console.warn('⚠️ Could not repair avatar URL:', avatarUrl);
-    return undefined; // Return undefined to show default avatar
+    // FALLBACK - If it's neither local nor http, keep as-is
+    console.log('🤷 Unknown URL format, keeping as-is');
+    return avatarUrl;
   }
 }
 
 /**
- * Helper function to fix avatar URLs in group member data
+ * Helper function to fix avatar URLs in group member data - FIXED VERSION
  */
 export const fixAvatarUrls = (members: any[]): any[] => {
   return members.map(member => {
+    console.log(`\n🔧 Processing avatar for: ${member.userName}`);
+    console.log(`📥 Original avatar URL: ${member.avatarUrl || 'NONE'}`);
+    
     let processedAvatarUrl;
     
-    if (member.avatarUrl === null || member.avatarUrl === undefined) {
+    if (member.avatarUrl === null || member.avatarUrl === undefined || member.avatarUrl === '') {
       // No avatar
       processedAvatarUrl = undefined;
-    } else if (typeof member.avatarUrl === 'string' && member.avatarUrl.trim() !== '') {
-      // Has avatar URL - process it
-      const originalUrl = member.avatarUrl;
-      
-      // If URL looks complete, use as-is
-      if (originalUrl.includes('?project=') && originalUrl.length > 100) {
-        processedAvatarUrl = originalUrl;
-        console.log(`✅ Using complete avatar URL for ${member.userName}: ${originalUrl.substring(0, 50)}...`);
-      } else {
-        // Try to repair if truncated
-        const repairedUrl = AvatarUrlFixer.repairTruncatedUrl(originalUrl);
-        if (repairedUrl) {
-          processedAvatarUrl = repairedUrl;
-          console.log(`🔧 Repaired avatar URL for ${member.userName}: ${repairedUrl.substring(0, 50)}...`);
-        } else {
-          // If we can't repair, log the issue but don't break the app
-          console.warn('⚠️ Could not process avatar URL for', member.userName, ':', originalUrl);
-          processedAvatarUrl = undefined;
-        }
-      }
+      console.log('📝 No avatar to process');
     } else {
-      // Invalid/empty URL
-      processedAvatarUrl = undefined;
+      // Process the avatar URL
+      processedAvatarUrl = AvatarUrlFixer.processAvatarUrl(member.avatarUrl);
+      console.log(`📤 Processed avatar URL: ${processedAvatarUrl ? processedAvatarUrl.substring(0, 80) + '...' : 'NONE'}`);
     }
 
-    return {
+    const result = {
       ...member,
       avatarUrl: processedAvatarUrl
     };
+
+    console.log(`✅ Final result for ${member.userName}: ${result.avatarUrl ? 'HAS AVATAR' : 'NO AVATAR'}`);
+    
+    return result;
   });
 };

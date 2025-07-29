@@ -73,67 +73,6 @@ const GroupCalendar = () => {
   const screenHeight = Dimensions.get('window').height;
   const chatHeight = screenHeight * 0.33; // 33% of screen height
 
-  const debugAvatarDisplay = () => {
-  console.log('\n🔍 DEBUGGING AVATAR DISPLAY...');
-  
-  groupMembers.forEach((member, index) => {
-    console.log(`\n👤 Member ${index + 1}: ${member.userName}`);
-    console.log(`🆔 User ID: ${member.userId}`);
-    console.log(`🖼️ Has Avatar URL: ${!!member.avatarUrl}`);
-    console.log(`📏 Avatar URL Length: ${member.avatarUrl?.length || 0}`);
-    console.log(`🔗 Avatar URL: ${member.avatarUrl || 'NONE'}`);
-    
-    if (member.avatarUrl) {
-      // Test if URL is accessible
-      console.log('🌐 Testing URL accessibility...');
-      fetch(member.avatarUrl, { method: 'HEAD' })
-        .then(response => {
-          console.log(`✅ ${member.userName} URL accessible: ${response.ok} (${response.status})`);
-          console.log(`📋 Content-Type: ${response.headers.get('content-type')}`);
-        })
-        .catch(error => {
-          console.log(`❌ ${member.userName} URL failed: ${error.message}`);
-        });
-    }
-  });
-};
-
-const fixBrokenAvatar = async () => {
-  try {
-    console.log('🔧 FIXING BROKEN AVATAR...');
-    
-    const iosUser = groupMembers.find(m => m.userName === 'New iOS user');
-    if (!iosUser?.avatarUrl) {
-      console.log('❌ No iOS user avatar to fix');
-      return;
-    }
-    
-    // Extract file ID from broken URL
-    const fileIdMatch = iosUser.avatarUrl.match(/files\/([a-f0-9]+)\/view/);
-    if (!fileIdMatch) {
-      console.log('❌ Could not extract file ID from URL');
-      return;
-    }
-    
-    const brokenFileId = fileIdMatch[1];
-    console.log('🗑️ Deleting broken file:', brokenFileId);
-    
-    // Delete the broken file
-    await storage.deleteFile(appwriteConfig.avatarBucketId, brokenFileId);
-    console.log('✅ Broken file deleted');
-    
-    // Clear the broken URL from database
-    await calendarService.updateUserAvatar(iosUser.userId, params.groupId, '');
-    console.log('✅ Broken URL cleared from database');
-    
-    console.log('🎯 iOS user can now re-upload their avatar');
-    
-  } catch (error) {
-    console.error('❌ Fix failed:', error);
-  }
-};
-
-
   // Get current week dates
   const getCurrentWeek = () => {
     const today = new Date();
@@ -169,6 +108,36 @@ const fixBrokenAvatar = async () => {
     initializeCalendar();
   }, [params.groupId]);
 
+  // Automatically process all avatars when calendar loads
+  const autoProcessAvatarsOnLoad = async () => {
+    try {
+      console.log('\n🔄 AUTO-PROCESSING AVATARS ON CALENDAR LOAD...');
+      
+      // Only process current user's avatar automatically
+      const { userProfileService } = await import('../../services/userProfileService');
+      const userProfile = await userProfileService.getUserProfile();
+      
+      if (userProfile?.avatarUri && userProfile.avatarUri.startsWith('file://')) {
+        console.log('📱 Found local avatar - processing for group visibility...');
+        
+        // Process avatar in background (non-blocking)
+        groupsService.forceAvatarUploadToAllGroups(currentUserId)
+          .then(() => {
+            console.log('✅ Background avatar processing completed');
+            // Silently reload members to show updated avatar
+            loadGroupMembers(currentUserId);
+          })
+          .catch((error) => {
+            console.warn('⚠️ Background avatar processing failed:', error.message);
+          });
+      }
+      
+    } catch (error: any) {
+      console.warn('⚠️ Auto avatar processing failed:', error.message);
+      // Don't show error - this is background enhancement
+    }
+  };
+
   const initializeCalendar = async () => {
     try {
       setIsLoading(true);
@@ -178,17 +147,22 @@ const fixBrokenAvatar = async () => {
       setCurrentUserId(userId);
       console.log('Current user ID:', userId);
 
-      // Sync user profile to all groups (this will update user names)
+      // Sync user profile to all groups (now includes avatar upload)
       await groupsService.syncUserProfileToAllGroups(userId);
 
-      // Get group information to see who created it
+      // Get group information
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
       console.log('Group info:', group);
       
-      // Load all group data
+      // Load group members
+      await loadGroupMembers(userId);
+      
+      // Auto-process avatars for group visibility (background)
+      autoProcessAvatarsOnLoad();
+      
+      // Load other calendar data
       await Promise.all([
-        loadGroupMembers(userId),
         loadCalendarEntries(),
         loadUserStreaks(),
         loadChatMessages()
@@ -381,24 +355,6 @@ const fixBrokenAvatar = async () => {
     };
   };
 
-  // Temporary debug function to manually sync avatars
-  const handleManualAvatarSync = async () => {
-    try {
-      console.log('🔄 Starting manual avatar sync...');
-      
-      // Force sync user profile to all groups
-      await groupsService.syncUserProfileToAllGroups(currentUserId);
-      
-      // Reload group members to see changes
-      await loadGroupMembers(currentUserId);
-      
-      Alert.alert('Success', 'Avatar sync completed! Check logs for details.');
-    } catch (error: any) {
-      console.error('Manual avatar sync failed:', error);
-      Alert.alert('Error', 'Avatar sync failed: ' + error.message);
-    }
-  };
-
   // Fixed sendMessage function
   const sendMessage = async (message: string): Promise<void> => {
     if (!currentUserId || !currentUserName) {
@@ -472,30 +428,6 @@ const fixBrokenAvatar = async () => {
         <Text style={styles.currentDate}>{getCurrentDateString()}</Text>
         {params.groupName && (
           <Text style={styles.groupName}>{params.groupName}</Text>
-        )}
-        {__DEV__ && (
-  <TouchableOpacity
-    style={[styles.debugButton, { backgroundColor: '#00ff00' }]}
-    onPress={debugAvatarDisplay}
-  >
-    <Text style={styles.debugButtonText}>🔍 Debug Display</Text>
-  </TouchableOpacity>
-)}
-{__DEV__ && (
-  <TouchableOpacity
-    style={[styles.debugButton, { backgroundColor: '#ff4444' }]}
-    onPress={fixBrokenAvatar}
-  >
-    <Text style={styles.debugButtonText}>🔧 Fix Avatar</Text>
-  </TouchableOpacity>
-)}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={styles.debugButton}
-            onPress={handleManualAvatarSync}
-          >
-            <Text style={styles.debugButtonText}>🔄 Sync Avatar</Text>
-          </TouchableOpacity>
         )}
       </View>
 
@@ -610,18 +542,6 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     fontStyle: 'italic',
-  },
-  debugButton: {
-    backgroundColor: '#ff9500',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  debugButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
 });
 
