@@ -1,4 +1,3 @@
-// app/group_calendar/index.tsx - Fixed layout for TODO #4
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -9,8 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  TouchableOpacity,
-  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { calendarService } from '../../services/calendarService';
@@ -21,7 +18,6 @@ import UserAvatarPicker from '../../components/calendar/userAvatarPicker';
 import WeekHeader from '../../components/calendar/weekHeader';
 import UserCalendarRow from '../../components/calendar/userCalendarRow';
 import ChatWindow from '../../components/calendar/chatWindow';
-import { storage, appwriteConfig } from '../../lib/appwrite';
 
 interface GroupMember {
   id: string;
@@ -70,11 +66,11 @@ const GroupCalendar = () => {
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
 
-  // Get screen dimensions and calculate layout proportions - EVEN MORE COMPACT HEADER
+  // Get screen dimensions and calculate layout proportions
   const screenHeight = Dimensions.get('window').height;
-  const headerHeight = screenHeight * 0.10; // Reduced from 12% to 10% for ultra-compact header
-  const calendarRowsHeight = screenHeight * 0.38; // Increased from 36% to 38% 
-  const chatHeight = screenHeight * 0.52; // 52% for chat (unchanged)
+  const headerHeight = screenHeight * 0.10; // 10% for week header
+  const calendarRowsHeight = screenHeight * 0.38; // 38% for user calendar rows
+  const chatHeight = screenHeight * 0.52; // 52% for chat
 
   // Get current week dates
   const getCurrentWeek = () => {
@@ -114,24 +110,19 @@ const GroupCalendar = () => {
   // Automatically process all avatars when calendar loads
   const autoProcessAvatarsOnLoad = async () => {
     try {
-      // Only process current user's avatar automatically
       const { userProfileService } = await import('../../services/userProfileService');
       const userProfile = await userProfileService.getUserProfile();
       
       if (userProfile?.avatarUri && userProfile.avatarUri.startsWith('file://')) {
-        // Process avatar in background (non-blocking)
         groupsService.forceAvatarUploadToAllGroups(currentUserId)
           .then(() => {
-            // Silently reload members to show updated avatar
             loadGroupMembers(currentUserId);
           })
           .catch((error) => {
-            // Don't show error - this is background enhancement
+            // Handle error silently
           });
       }
-      
     } catch (error: any) {
-      // Don't show error - this is background enhancement
     }
   };
 
@@ -139,24 +130,17 @@ const GroupCalendar = () => {
     try {
       setIsLoading(true);
       
-      // First, get the current user ID
       const userId = await userService.getOrCreateUserId();
       setCurrentUserId(userId);
 
-      // Sync user profile to all groups (now includes avatar upload)
       await groupsService.syncUserProfileToAllGroups(userId);
 
-      // Get group information
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
       
-      // Load group members
       await loadGroupMembers(userId);
-      
-      // Auto-process avatars for group visibility (background)
       autoProcessAvatarsOnLoad();
       
-      // Load other calendar data
       await Promise.all([
         loadCalendarEntries(),
         loadUserStreaks(),
@@ -172,20 +156,17 @@ const GroupCalendar = () => {
 
   const loadGroupMembers = async (userId: string) => {
     try {
-      // Get all group members from the database
       const members = await calendarService.getGroupMembers(params.groupId);
       setGroupMembers(members);
       
-      // Find current user's name from the group members
       const currentUser = members.find(member => member.userId === userId);
       if (currentUser) {
         setCurrentUserName(currentUser.userName);
       } else {
         setCurrentUserName('You');
       }
-      
     } catch (error) {
-      setGroupMembers([]); // Set empty array on error
+      setGroupMembers([]);
       Alert.alert('Error', 'Failed to load group members');
     }
   };
@@ -213,7 +194,7 @@ const GroupCalendar = () => {
       const messages = await calendarService.getChatMessages(params.groupId);
       setChatMessages(messages);
     } catch (error) {
-      // Don't show alert for chat errors, just log them
+      // Handle error silently
     }
   };
 
@@ -222,7 +203,6 @@ const GroupCalendar = () => {
   };
 
   const toggleDay = async (userId: string, date: Date) => {
-    // Only allow users to edit their own row
     if (userId !== currentUserId) {
       Alert.alert('Permission Denied', 'You can only edit your own calendar entries');
       return;
@@ -235,7 +215,6 @@ const GroupCalendar = () => {
       );
 
       if (existingEntry) {
-        // Toggle existing entry
         const updatedEntry = await calendarService.updateCalendarEntry(
           existingEntry.id,
           !existingEntry.completed
@@ -247,7 +226,6 @@ const GroupCalendar = () => {
           )
         );
       } else {
-        // Create new entry
         const newEntry = await calendarService.createCalendarEntry({
           userId,
           groupId: params.groupId,
@@ -258,9 +236,7 @@ const GroupCalendar = () => {
         setCalendarEntries(prev => [...prev, newEntry]);
       }
 
-      // Recalculate streaks
       await loadUserStreaks();
-      
     } catch (error) {
       Alert.alert('Error', 'Failed to update calendar entry');
     }
@@ -268,24 +244,17 @@ const GroupCalendar = () => {
 
   const handleAvatarUpdate = async (avatarUrl: string) => {
     try {
-      // Check if this is a local file URL that needs uploading
       if (avatarUrl.startsWith('file://')) {
-        // Upload to Appwrite storage
         const cloudUrl = await avatarUploadService.uploadAvatar(avatarUrl, currentUserId);
-        
-        // Update calendar service with cloud URL
         await calendarService.updateUserAvatar(currentUserId, params.groupId, cloudUrl);
       } else if (avatarUrl === '') {
-        // Remove avatar
         await calendarService.updateUserAvatar(currentUserId, params.groupId, '');
       } else {
-        // Direct URL update (shouldn't happen with current flow, but good fallback)
         await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
       }
       
       await loadGroupMembers(currentUserId);
       setShowAvatarPicker(false);
-      
     } catch (error) {
       Alert.alert('Error', 'Failed to update avatar');
     }
@@ -323,7 +292,6 @@ const GroupCalendar = () => {
     };
   };
 
-  // Fixed sendMessage function
   const sendMessage = async (message: string): Promise<void> => {
     if (!currentUserId || !currentUserName) {
       Alert.alert('Error', 'User information not loaded');
@@ -333,7 +301,6 @@ const GroupCalendar = () => {
     try {
       setIsSendingMessage(true);
       
-      // Send message to database
       const newChatMessage = await calendarService.sendChatMessage(
         params.groupId,
         currentUserId,
@@ -341,9 +308,7 @@ const GroupCalendar = () => {
         message
       );
       
-      // Add message to local state
       setChatMessages(prev => [...prev, newChatMessage]);
-      
     } catch (error: any) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
@@ -421,7 +386,7 @@ const GroupCalendar = () => {
         </ScrollView>
       </View>
 
-      {/* Chat Window - 52% of screen - DOUBLED IN SIZE */}
+      {/* Chat Window - 52% of screen */}
       <View style={[styles.chatContainer, { height: chatHeight }]}>
         <ChatWindow
           messages={chatMessages}
@@ -465,8 +430,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingTop: 0, // No top padding to reduce white space above
-    paddingBottom: 0, // No bottom padding to reduce white space below
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   userRowsContainer: {
     backgroundColor: '#fff',
@@ -478,11 +443,11 @@ const styles = StyleSheet.create({
   },
   userRowsContent: {
     paddingBottom: 10,
-    paddingRight: 25, // Increased right padding for more space on right side
+    paddingRight: 25,
   },
   chatContainer: {
     backgroundColor: '#fff',
-    flex: 1, // This ensures the chat takes remaining space
+    flex: 1,
   },
   emptyStateContainer: {
     flex: 1,

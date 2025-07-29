@@ -1,4 +1,3 @@
-// services/imageCompressionService.ts
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 
@@ -68,16 +67,12 @@ class ImageCompressionService {
         // Calculate compression ratio if both sizes are available
         if (imageInfo.exists && 'size' in imageInfo) {
           const compressionRatio = ((imageInfo.size - compressedInfo.size) / imageInfo.size * 100).toFixed(1);
-          console.log(`Compression saved: ${compressionRatio}%`);
         }
       } else {
-        console.log('Could not get compressed image size');
       }
 
       return manipulatedImage.uri;
     } catch (error) {
-      console.error('Image compression failed:', error);
-      // Return original URI if compression fails
       return imageUri;
     }
   }
@@ -99,7 +94,6 @@ class ImageCompressionService {
       
       return await Promise.all(compressionPromises);
     } catch (error) {
-      console.error('Multiple image compression failed:', error);
       return imageUris; // Return original URIs if compression fails
     }
   }
@@ -124,7 +118,6 @@ class ImageCompressionService {
         exists: fileInfo.exists,
       };
     } catch (error) {
-      console.error('Failed to get image info:', error);
       return null;
     }
   }

@@ -35,4 +35,4 @@ You are a Principal Software Engineer with many years of industry knowledge. Som
 
 ## Todos
 
-1. Remove all debugging logs, methods, and buttons used throughout the project.
+1. Tests

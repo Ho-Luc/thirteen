@@ -27,7 +27,6 @@ class UserService {
           await AsyncStorage.setItem('userId', currentUser.$id);
         } catch (storageError) {
           // Don't fail the whole operation for storage errors
-          console.error('Storage error:', storageError);
         }
         return currentUser.$id;
       }

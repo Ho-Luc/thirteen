@@ -1,4 +1,3 @@
-// services/avatarUploadService.tsx - Clean version without confusing error messages
 import { storage, appwriteConfig, generateId } from '../lib/appwrite';
 import { imageCompressionService } from './imageCompressionService';
 
@@ -10,29 +9,21 @@ class AvatarUploadService {
     onProgress?: (progress: any) => void
   ): Promise<string> {
     try {
-      console.log('🚀 Starting avatar upload...');
-      console.log('📁 Image source:', imageUri.startsWith('file://') ? 'Local file' : 'Remote URL');
-      
       // Step 1: Compress the image
       const compressedUri = await this.compressAvatarImage(imageUri);
-      console.log('✂️ Image compressed successfully');
       
       // Step 2: Generate filename
       const fileName = this.generateAvatarFileName(userId);
-      console.log('📝 Generated filename:', fileName);
       
       // Step 3: Upload to Appwrite using the best method
       const fileId = await this.uploadToAppwrite(compressedUri, fileName);
-      console.log('☁️ Successfully uploaded with ID:', fileId);
       
       // Step 4: Generate and return URL
       const publicUrl = this.getPublicUrl(fileId);
-      console.log('🔗 Avatar available at:', publicUrl.substring(0, 60) + '...');
       
       return publicUrl;
       
     } catch (error: any) {
-      console.error('❌ Avatar upload failed:', error);
       throw new Error(`Failed to upload avatar: ${error.message || error}`);
     }
   }
@@ -44,22 +35,16 @@ class AvatarUploadService {
   ): Promise<string> {
     const fileId = generateId();
     
-    console.log('☁️ Preparing upload to Appwrite...');
-    console.log('📋 Target bucket:', appwriteConfig.avatarBucketId);
-    
     // For React Native, always use FormData for local files
     // This avoids the "File not found in payload" SDK error
     if (imageUri.startsWith('file://')) {
-      console.log('📱 Local file detected - using FormData method');
       return await this.uploadWithFormData(imageUri, fileName, fileId);
     }
     
     // For remote URLs, try SDK first, then FormData
-    console.log('🌐 Remote URL detected - trying SDK method first');
     try {
       return await this.uploadWithSDK(imageUri, fileName, fileId);
     } catch (sdkError: any) {
-      console.log('⚠️ SDK upload failed, using FormData as fallback');
       return await this.uploadWithFormData(imageUri, fileName, fileId);
     }
   }
@@ -71,8 +56,6 @@ class AvatarUploadService {
     fileId: string
   ): Promise<string> {
     try {
-      console.log('📤 Starting FormData upload...');
-      
       // Create FormData
       const formData = new FormData();
       formData.append('fileId', fileId);
@@ -99,13 +82,10 @@ class AvatarUploadService {
       }
       
       const result = await response.json();
-      console.log('✅ FormData upload successful');
-      console.log(`📊 Uploaded ${Math.round(result.sizeOriginal / 1024)}KB as ${result.mimeType}`);
       
       return result.$id;
       
     } catch (error: any) {
-      console.error('❌ FormData upload failed:', error.message);
       throw new Error(`FormData upload failed: ${error.message}`);
     }
   }
@@ -117,8 +97,6 @@ class AvatarUploadService {
     fileId: string
   ): Promise<string> {
     try {
-      console.log('📞 Using Appwrite SDK upload...');
-      
       const fileObject = {
         name: fileName,
         type: 'image/jpeg',
@@ -131,12 +109,9 @@ class AvatarUploadService {
         fileObject
       );
       
-      console.log('✅ SDK upload successful');
-      
       return response.$id;
       
     } catch (error: any) {
-      console.log('ℹ️ SDK upload not available for this file type');
       throw error;
     }
   }
@@ -146,7 +121,6 @@ class AvatarUploadService {
     try {
       return await imageCompressionService.compressForAvatar(imageUri);
     } catch (error: any) {
-      console.warn('⚠️ Image compression failed, using original:', error.message);
       return imageUri;
     }
   }
@@ -171,20 +145,15 @@ class AvatarUploadService {
   // Test upload capabilities
   async testUploadCapability(): Promise<boolean> {
     try {
-      console.log('🧪 Testing upload capability...');
-      
       if (!appwriteConfig.avatarBucketId) {
-        console.log('❌ Avatar bucket not configured');
         return false;
       }
       
       // Test storage connection
       await storage.listFiles(appwriteConfig.avatarBucketId, [], 1);
-      console.log('✅ Upload capability confirmed');
       return true;
       
     } catch (error: any) {
-      console.log('❌ Upload capability test failed:', error.message);
       return false;
     }
   }
@@ -202,13 +171,11 @@ class AvatarUploadService {
       }
 
       const fileId = fileIdMatch[1];
-      console.log('🗑️ Removing old avatar:', fileId);
       
       await storage.deleteFile(appwriteConfig.avatarBucketId, fileId);
-      console.log('✅ Old avatar removed');
       
     } catch (error: any) {
-      console.warn('⚠️ Could not remove old avatar (non-critical):', error.message);
+      // Handle error silently
     }
   }
 
