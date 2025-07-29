@@ -1,248 +1,453 @@
-// services/groupsService.ts
+// services/groupsService.tsx - Resilient version with safe avatar handling
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
-import { Group } from '../components/group_management/types';
+import { userProfileService } from './userProfileService';
+import { autoCloudUploadService } from './autoCloudUploadService';
+import { 
+  GroupRecord, 
+  GroupMemberRecord, 
+  CreateGroupPayload, 
+  Group 
+} from '../utils/database';
 
-export interface AppwriteGroup {
-  $id: string;
-  $createdAt: string;
-  $updatedAt: string;
-  name: string;
-  shareKey: string;
-  createdBy: string;
-}
-
+/**
+ * Service for managing groups and group memberships
+ * Enhanced with safe avatar cloud upload that won't break core functionality
+ */
 class GroupsService {
-  // Create a new group
+  /**
+   * Create a new group with safe avatar upload attempt
+   */
   async createGroup(groupData: {
     name: string;
     shareKey: string;
     createdBy: string;
   }): Promise<Group> {
     try {
-      const response = await databases.createDocument(
+      console.log('\n🚀 CREATING GROUP WITH SAFE AVATAR UPLOAD...');
+      console.log('📋 Group Data:', groupData);
+      
+      // Create group document first (critical operation)
+      const groupPayload: CreateGroupPayload = {
+        name: groupData.name,
+        shareKey: groupData.shareKey,
+        createdBy: groupData.createdBy,
+      };
+
+      console.log('📤 Creating group document...');
+      const groupResponse = await databases.createDocument<GroupRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupsCollectionId,
         generateId(),
-        {
-          name: groupData.name,
-          shareKey: groupData.shareKey,
-          createdBy: groupData.createdBy,
-        }
+        groupPayload
       );
 
-      return {
-        id: response.$id,
-        name: response.name,
-        shareKey: response.shareKey,
-        createdAt: new Date(response.$createdAt),
-      };
-    } catch (error) {
-        throw new Error('Failed to create group. Please try again.');
+      console.log('✅ Group created successfully:', groupResponse.$id);
+
+      // Create membership with safe avatar upload (non-blocking)
+      try {
+        console.log('🔗 Creating membership with safe avatar upload...');
+        await this.createMembershipWithSafeAvatar({
+          userId: groupData.createdBy,
+          groupId: groupResponse.$id,
+        });
+      } catch (membershipError: any) {
+        console.error('❌ Membership creation failed, trying fallback:', membershipError.message);
+        
+        // Fallback: Create membership without avatar
+        await this.createMembershipFallback({
+          userId: groupData.createdBy,
+          groupId: groupResponse.$id,
+        });
+      }
+
+      console.log('✅ Group creation process completed');
+      return this.transformGroupRecord(groupResponse);
+    } catch (error: any) {
+      console.error('❌ Group creation failed:', error);
+      throw new Error('Failed to create group. Please try again.');
     }
   }
 
-  // Get all groups for a user
+  /**
+   * Create group membership with safe avatar cloud upload
+   */
+  private async createMembershipWithSafeAvatar(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<void> {
+    console.log('\n📝 CREATING MEMBERSHIP WITH SAFE AVATAR UPLOAD...');
+    console.log('👤 User ID:', membershipData.userId);
+    console.log('🏷️ Group ID:', membershipData.groupId);
+    
+    // Get user profile for name (critical)
+    const userProfile = await userProfileService.getUserProfile();
+    const userName = userProfile?.name || 'Anonymous User';
+    console.log('👤 User name:', userName);
+    
+    // Try to get cloud avatar (non-critical)
+    let cloudAvatarUrl: string | null = null;
+    try {
+      console.log('☁️ Attempting safe avatar processing...');
+      
+      // Add timeout to avatar processing
+      const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(membershipData.userId);
+      const timeoutPromise = new Promise<string | null>((_, reject) =>
+        setTimeout(() => reject(new Error('Avatar processing timeout')), 15000)
+      );
+      
+      cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
+      
+      if (cloudAvatarUrl) {
+        console.log('✅ Avatar processed successfully for group visibility');
+      } else {
+        console.log('ℹ️ No avatar available or processing failed safely');
+      }
+    } catch (avatarError: any) {
+      console.warn('⚠️ Avatar processing failed (continuing without avatar):', avatarError.message);
+      // Continue without avatar - this is not critical
+    }
+
+    // Create membership document (critical operation)
+    const membershipPayload: any = {
+      userId: membershipData.userId,
+      groupId: membershipData.groupId,
+      joinedAt: new Date().toISOString(),
+      userName: userName,
+    };
+
+    // Include cloud avatar URL if available
+    if (cloudAvatarUrl) {
+      membershipPayload.avatarUrl = cloudAvatarUrl;
+      console.log('✅ Including cloud avatar in membership');
+    } else {
+      console.log('ℹ️ Creating membership without avatar');
+    }
+
+    const membershipResponse = await databases.createDocument<GroupMemberRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupMembersCollectionId,
+      generateId(),
+      membershipPayload
+    );
+
+    console.log('✅ Membership created successfully:', membershipResponse.$id);
+    console.log(`🖼️ Avatar included: ${!!membershipResponse.avatarUrl}`);
+  }
+
+  /**
+   * Fallback membership creation without avatar
+   */
+  private async createMembershipFallback(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<void> {
+    console.log('🔄 Creating membership without avatar (safe fallback)...');
+    
+    const userProfile = await userProfileService.getUserProfile();
+    const fallbackPayload = {
+      userId: membershipData.userId,
+      groupId: membershipData.groupId,
+      joinedAt: new Date().toISOString(),
+      userName: userProfile?.name || 'Anonymous User',
+    };
+    
+    const retryResponse = await databases.createDocument<GroupMemberRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupMembersCollectionId,
+      generateId(),
+      fallbackPayload
+    );
+    
+    console.log('✅ Fallback membership created:', retryResponse.$id);
+  }
+
+  /**
+   * Join a group by share key with safe avatar upload
+   */
+  async joinGroup(shareKey: string, userId: string): Promise<Group> {
+    try {
+      console.log(`\n🚪 JOINING GROUP WITH SAFE AVATAR UPLOAD: ${shareKey}`);
+      
+      const group = await this.findGroupByShareKey(shareKey);
+      if (!group) {
+        console.log('❌ Group not found');
+        throw new Error('Group not found');
+      }
+
+      console.log('✅ Group found:', group.name);
+
+      const isAlreadyMember = await this.checkMembership(userId, group.$id);
+      if (isAlreadyMember) {
+        console.log('❌ Already a member');
+        throw new Error('Already a member');
+      }
+
+      // Create membership with safe avatar upload
+      try {
+        console.log('✅ Creating membership with safe avatar upload...');
+        await this.createMembershipWithSafeAvatar({
+          userId: userId,
+          groupId: group.$id,
+        });
+      } catch (membershipError: any) {
+        console.error('❌ Membership creation failed, using fallback:', membershipError.message);
+        
+        // Fallback: Create membership without avatar
+        await this.createMembershipFallback({
+          userId: userId,
+          groupId: group.$id,
+        });
+      }
+
+      console.log('✅ Successfully joined group');
+      return this.transformGroupRecord(group);
+    } catch (error: any) {
+      console.error('❌ Error joining group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync user profile to all group memberships with safe avatar cloud upload
+   */
+  async syncUserProfileToAllGroups(userId: string): Promise<void> {
+    try {
+      console.log(`\n🔄 SAFE SYNCING USER PROFILE: ${userId}`);
+      
+      const userProfile = await userProfileService.getUserProfile();
+      if (!userProfile) {
+        console.warn('⚠️ No user profile found for sync');
+        return;
+      }
+
+      console.log('👤 Profile to sync:', {
+        name: userProfile.name,
+        hasAvatar: !!userProfile.avatarUri
+      });
+
+      // Process avatar to cloud safely (non-blocking)
+      let cloudAvatarUrl: string | null = null;
+      try {
+        console.log('☁️ Attempting safe avatar processing for sync...');
+        
+        // Add timeout for sync operations
+        const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(userId);
+        const timeoutPromise = new Promise<string | null>((_, reject) =>
+          setTimeout(() => reject(new Error('Sync avatar timeout')), 10000)
+        );
+        
+        cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
+        
+        if (cloudAvatarUrl) {
+          console.log('✅ Avatar processed for sync');
+        }
+      } catch (avatarError: any) {
+        console.warn('⚠️ Avatar processing failed during sync (continuing with name only):', avatarError.message);
+      }
+
+      const memberships = await this.getUserMemberships(userId);
+      console.log(`🔄 Syncing profile for ${memberships.length} group memberships`);
+
+      // Update all memberships (prioritize name updates)
+      const updatePromises = memberships.map(async (membership) => {
+        try {
+          const updatePayload: any = {
+            userName: userProfile.name,
+          };
+
+          // Include cloud avatar if available
+          if (cloudAvatarUrl) {
+            updatePayload.avatarUrl = cloudAvatarUrl;
+          }
+
+          await databases.updateDocument(
+            appwriteConfig.databaseId,
+            appwriteConfig.groupMembersCollectionId,
+            membership.$id,
+            updatePayload
+          );
+
+          console.log(`✅ Updated membership ${membership.$id} with ${cloudAvatarUrl ? 'avatar' : 'name only'}`);
+          return true;
+        } catch (error: any) {
+          console.error(`❌ Failed to update membership ${membership.$id}:`, error);
+          return false;
+        }
+      });
+
+      const results = await Promise.allSettled(updatePromises);
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+      
+      console.log(`📊 Safe sync completed: ${successCount}/${memberships.length} memberships updated`);
+      console.log(`🖼️ Avatar status: ${cloudAvatarUrl ? 'uploaded and synced to all groups' : 'not available'}`);
+      
+    } catch (error: any) {
+      console.error('❌ Error syncing user profile to groups:', error);
+      console.log('⚠️ Continuing with app functionality despite sync error');
+      // Don't throw - let the user proceed even if sync fails
+    }
+  }
+
+  /**
+   * Force avatar upload for current user across all groups (safe version)
+   */
+  async forceAvatarUploadToAllGroups(userId: string): Promise<void> {
+    try {
+      console.log('\n🚀 SAFELY FORCING AVATAR UPLOAD TO ALL GROUPS...');
+      
+      // Check if uploads are enabled
+      if (!autoCloudUploadService.isUploadEnabled()) {
+        throw new Error('Avatar uploads are currently disabled due to previous failures');
+      }
+      
+      // Process complete avatar workflow safely
+      await autoCloudUploadService.processUserAvatar(userId);
+      
+      console.log('✅ Safe force avatar upload completed');
+      
+    } catch (error: any) {
+      console.error('❌ Safe force avatar upload failed:', error);
+      throw new Error(`Failed to upload avatar: ${error.message || error}`);
+    }
+  }
+
+  // ============== EXISTING METHODS (unchanged) ==============
+
   async getUserGroups(userId: string): Promise<Group[]> {
     try {
-      // Get all groups from the collection
-      const allGroupsResponse = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupsCollectionId
+      console.log(`\n📋 FETCHING USER GROUPS: ${userId}`);
+      
+      const [allGroups, userMemberships] = await Promise.all([
+        this.getAllGroups(),
+        this.getUserMemberships(userId)
+      ]);
+
+      console.log(`📊 Found ${allGroups.length} total groups, ${userMemberships.length} memberships`);
+
+      const createdGroups = allGroups.filter(group => group.createdBy === userId);
+      console.log(`📊 User created ${createdGroups.length} groups`);
+
+      const membershipGroupIds = userMemberships.map(m => m.groupId);
+      const joinedGroups = allGroups.filter(group => 
+        membershipGroupIds.includes(group.$id)
       );
-  
-      // Filter groups created by user manually
-      const createdGroups = allGroupsResponse.documents
-        .filter((doc: any) => doc.createdBy === userId)
-        .map((doc: any) => ({
-          id: doc.$id,
-          name: doc.name,
-          shareKey: doc.shareKey,
-          createdAt: new Date(doc.$createdAt),
-        }));
-  
-      // Get all group memberships
-      const allMembershipsResponse = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId
-      );
-  
-      // Filter memberships for this user manually
-      const userMemberships = allMembershipsResponse.documents
-        .filter((doc: any) => doc.userId === userId);
-  
-      // Get joined groups
-      const joinedGroups: Group[] = [];
-      for (const membership of userMemberships) {
-        const group = allGroupsResponse.documents.find((doc: any) => doc.$id === membership.groupId);
-        if (group) {
-          joinedGroups.push({
-            id: group.$id,
-            name: group.name,
-            shareKey: group.shareKey,
-            createdAt: new Date(group.$createdAt),
-          });
-        }
-      }
-  
-      // Combine and deduplicate groups
-      const allGroups = [...createdGroups, ...joinedGroups];
-      const uniqueGroups = allGroups.filter((group, index, self) =>
-        index === self.findIndex(g => g.id === group.id)
-      );
-  
-      return uniqueGroups;
-    } catch (error) {
+      console.log(`📊 User joined ${joinedGroups.length} groups`);
+
+      const allUserGroups = [...createdGroups, ...joinedGroups];
+      const uniqueGroups = this.deduplicateGroups(allUserGroups);
+      console.log(`📊 Total unique groups: ${uniqueGroups.length}`);
+
+      return uniqueGroups.map(this.transformGroupRecord);
+    } catch (error: any) {
+      console.error('❌ Error fetching user groups:', error);
       throw new Error('Failed to fetch groups. Please try again.');
     }
   }
 
-  // Delete a group
   async deleteGroup(groupId: string): Promise<void> {
     try {
+      console.log(`\n🗑️ DELETING GROUP: ${groupId}`);
+      
+      await this.deleteGroupMemberships(groupId);
+      
       await databases.deleteDocument(
         appwriteConfig.databaseId,
         appwriteConfig.groupsCollectionId,
         groupId
       );
 
-      // Delete all memberships for this group
-      const membershipsResponse = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId
-      );
-
-      const groupMemberships = membershipsResponse.documents
-        .filter((doc: any) => doc.groupId === groupId);
-
-      for (const membership of groupMemberships) {
-        await databases.deleteDocument(
-          appwriteConfig.databaseId,
-          appwriteConfig.groupMembersCollectionId,
-          membership.$id
-        );
-      }
-    } catch (error) {
+      console.log('✅ Group deleted successfully');
+    } catch (error: any) {
+      console.error('❌ Error deleting group:', error);
       throw new Error('Failed to delete group. Please try again.');
     }
   }
 
-  // Update a group
-  async updateGroup(groupId: string, updates: { name?: string }): Promise<Group> {
-    try {
-      const response = await databases.updateDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupsCollectionId,
-        groupId,
-        updates
-      );
-
-      return {
-        id: response.$id,
-        name: response.name,
-        shareKey: response.shareKey,
-        createdAt: new Date(response.$createdAt),
-      };
-    } catch (error) {
-      throw new Error('Failed to update group. Please try again.');
-    }
-  }
-
-  // Get a single group by ID
   async getGroup(groupId: string): Promise<Group> {
     try {
-      const response = await databases.getDocument(
+      const response = await databases.getDocument<GroupRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupsCollectionId,
         groupId
       );
 
-      return {
-        id: response.$id,
-        name: response.name,
-        shareKey: response.shareKey,
-        createdAt: new Date(response.$createdAt),
-      };
-    } catch (error) {
+      return this.transformGroupRecord(response);
+    } catch (error: any) {
+      console.error('❌ Error fetching group:', error);
       throw new Error('Failed to fetch group. Please try again.');
     }
   }
 
-  async joinGroupByShareKey(shareKey: string): Promise<Group | null> {
+  // ============== PRIVATE HELPER METHODS ==============
+
+  private async getAllGroups(): Promise<GroupRecord[]> {
+    const response = await databases.listDocuments<GroupRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupsCollectionId
+    );
+    return response.documents;
+  }
+
+  private async getUserMemberships(userId: string): Promise<GroupMemberRecord[]> {
+    const response = await databases.listDocuments<GroupMemberRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupMembersCollectionId
+    );
+    return response.documents.filter(doc => doc.userId === userId);
+  }
+
+  private async findGroupByShareKey(shareKey: string): Promise<GroupRecord | null> {
+    const allGroups = await this.getAllGroups();
+    return allGroups.find(group => group.shareKey === shareKey) || null;
+  }
+
+  private async checkMembership(userId: string, groupId: string): Promise<boolean> {
     try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupsCollectionId
-      );
-
-      const matchingGroups = response.documents.filter((doc: any) => {
-        return doc.shareKey === shareKey;
-      });
-
-      if (matchingGroups.length === 0) {
-        return null;
-      }
-
-      const group = matchingGroups[0];
-      
-      return {
-        id: group.$id,
-        name: group.name,
-        shareKey: group.shareKey,
-        createdAt: new Date(group.$createdAt),
-      };
+      const memberships = await this.getUserMemberships(userId);
+      return memberships.some(membership => membership.groupId === groupId);
     } catch (error) {
-      throw new Error('Failed to find group. Please check the share key and try again.');
+      return false;
     }
   }
 
-  // Join a group and create membership record
-  async joinGroup(shareKey: string, userId: string): Promise<Group> {
-    try {
-      const foundGroup = await this.joinGroupByShareKey(shareKey);
-      if (!foundGroup) {
-        throw new Error('Group not found');
-      }
-
-      const existingMembership = await this.checkMembership(userId, foundGroup.id);      
-      if (existingMembership) {
-        throw new Error('Already a member');
-      }
-
-      const membershipData = {
-        userId: userId,
-        groupId: foundGroup.id,
-        joinedAt: new Date().toISOString(),
-      };
-      
-      const membershipResponse = await databases.createDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        generateId(),
-        membershipData
-      );
-
-      return foundGroup;
-    } catch (error) {
-      throw new Error('Joining group error: ' + error);
-    }
-  }
-  
-  async checkMembership(userId: string, groupId: string): Promise<boolean> {
-  try {
-    const response = await databases.listDocuments(
+  private async deleteGroupMemberships(groupId: string): Promise<void> {
+    const response = await databases.listDocuments<GroupMemberRecord>(
       appwriteConfig.databaseId,
       appwriteConfig.groupMembersCollectionId
     );
 
-    const membership = response.documents.find((doc: any) => 
-      doc.userId === userId && doc.groupId === groupId
+    const groupMemberships = response.documents.filter(doc => doc.groupId === groupId);
+    
+    const deletePromises = groupMemberships.map(membership =>
+      databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        membership.$id
+      )
     );
 
-    return !!membership;
-  } catch (error) {
-    return false; 
+    await Promise.allSettled(deletePromises);
   }
-}}
-  
+
+  private deduplicateGroups(groups: GroupRecord[]): GroupRecord[] {
+    const seen = new Set<string>();
+    return groups.filter(group => {
+      if (seen.has(group.$id)) {
+        return false;
+      }
+      seen.add(group.$id);
+      return true;
+    });
+  }
+
+  private transformGroupRecord(record: GroupRecord): Group {
+    return {
+      id: record.$id,
+      name: record.name,
+      shareKey: record.shareKey,
+      createdAt: new Date(record.$createdAt),
+    };
+  }
+}
 
 export const groupsService = new GroupsService();
