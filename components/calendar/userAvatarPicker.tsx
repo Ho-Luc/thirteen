@@ -27,6 +27,7 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
 
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -45,6 +46,8 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
     if (!hasPermission) return;
 
     try {
+      setUploadProgress('Selecting image...');
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -56,10 +59,12 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         setPreviewUri(asset.uri);
+        setUploadProgress('');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick image from library');
       console.error('Image picker error:', error);
+      setUploadProgress('');
     }
   };
 
@@ -74,6 +79,8 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
     }
 
     try {
+      setUploadProgress('Opening camera...');
+      
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -83,10 +90,12 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         setPreviewUri(asset.uri);
+        setUploadProgress('');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to take photo');
       console.error('Camera error:', error);
+      setUploadProgress('');
     }
   };
 
@@ -95,16 +104,26 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
 
     try {
       setIsUploading(true);
+      setUploadProgress('Preparing image...');
 
       // Compress the image first
+      setUploadProgress('Compressing image...');
       const compressedUri = await imageCompressionService.compressForAvatar(previewUri);
       
-      // In production, you would upload to your storage service here
-      // For now, we'll just use the compressed local URI
+      setUploadProgress('Uploading to cloud storage...');
+      
+      // Call the parent handler which will handle the actual upload
       onAvatarSelected(compressedUri);
+      
+      // Reset state after successful upload
       resetState();
-    } catch (error) {
-      Alert.alert('Upload Failed', 'Failed to process avatar. Please try again.');
+      
+    } catch (error: any) {
+      setUploadProgress('');
+      Alert.alert(
+        'Upload Failed', 
+        'Failed to process avatar. Please try again.\n\nDetails: ' + error.message
+      );
       console.error('Avatar processing error:', error);
     } finally {
       setIsUploading(false);
@@ -114,9 +133,19 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
   const resetState = () => {
     setPreviewUri(null);
     setIsUploading(false);
+    setUploadProgress('');
   };
 
   const handleClose = () => {
+    if (isUploading) {
+      Alert.alert(
+        'Upload in Progress',
+        'Please wait for the avatar upload to complete.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+    
     resetState();
     onClose();
   };
@@ -163,12 +192,19 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
             )}
           </View>
 
+          {/* Upload Progress */}
+          {uploadProgress && (
+            <View style={styles.progressContainer}>
+              <Text style={styles.progressText}>{uploadProgress}</Text>
+            </View>
+          )}
+
           {/* Action Buttons */}
           <View style={styles.buttonContainer}>
             {!previewUri ? (
               <>
                 <TouchableOpacity
-                  style={[styles.button, styles.primaryButton]}
+                  style={[styles.button, styles.primaryButton, isUploading && styles.disabledButton]}
                   onPress={pickImageFromLibrary}
                   disabled={isUploading}
                 >
@@ -176,7 +212,7 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.button, styles.primaryButton]}
+                  style={[styles.button, styles.primaryButton, isUploading && styles.disabledButton]}
                   onPress={takePhoto}
                   disabled={isUploading}
                 >
@@ -185,7 +221,7 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
 
                 {currentAvatarUrl && (
                   <TouchableOpacity
-                    style={[styles.button, styles.dangerButton]}
+                    style={[styles.button, styles.dangerButton, isUploading && styles.disabledButton]}
                     onPress={removeCurrentAvatar}
                     disabled={isUploading}
                   >
@@ -196,7 +232,7 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
             ) : (
               <>
                 <TouchableOpacity
-                  style={[styles.button, styles.successButton]}
+                  style={[styles.button, styles.successButton, isUploading && styles.disabledButton]}
                   onPress={uploadAvatar}
                   disabled={isUploading}
                 >
@@ -211,7 +247,7 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.button, styles.secondaryButton]}
+                  style={[styles.button, styles.secondaryButton, isUploading && styles.disabledButton]}
                   onPress={() => setPreviewUri(null)}
                   disabled={isUploading}
                 >
@@ -223,11 +259,17 @@ const UserAvatarPicker: React.FC<UserAvatarPickerProps> = ({
 
           {/* Close Button */}
           <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
+            style={[
+              styles.button, 
+              styles.cancelButton, 
+              isUploading && styles.disabledButton
+            ]}
             onPress={handleClose}
             disabled={isUploading}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Text style={styles.cancelButtonText}>
+              {isUploading ? 'Please wait...' : 'Cancel'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -258,7 +300,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   avatarPreview: {
-    marginBottom: 25,
+    marginBottom: 15,
     alignItems: 'center',
   },
   previewImage: {
@@ -281,6 +323,21 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 40,
     color: '#999',
+  },
+  progressContainer: {
+    marginBottom: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+    borderLeft: 4,
+    borderLeftColor: '#2196f3',
+  },
+  progressText: {
+    fontSize: 14,
+    color: '#1976d2',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   buttonContainer: {
     width: '100%',
@@ -335,6 +392,10 @@ const styles = StyleSheet.create({
     color: '#6c757d',
     fontSize: 16,
     fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#e9ecef',
+    borderColor: '#dee2e6',
   },
   loadingContainer: {
     flexDirection: 'row',

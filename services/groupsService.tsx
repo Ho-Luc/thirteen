@@ -1,4 +1,4 @@
-// services/groupsService.tsx - Resilient version with safe avatar handling
+// services/groupsService.tsx - Enhanced with leave/delete logic for TODO #2
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
 import { userProfileService } from './userProfileService';
 import { autoCloudUploadService } from './autoCloudUploadService';
@@ -11,9 +11,165 @@ import {
 
 /**
  * Service for managing groups and group memberships
- * Enhanced with safe avatar cloud upload that won't break core functionality
+ * Enhanced with leave/delete logic - TODO #2
  */
 class GroupsService {
+  /**
+   * Check if a user is the creator of a group
+   */
+  async isGroupCreator(userId: string, groupId: string): Promise<boolean> {
+    try {
+      const group = await databases.getDocument<GroupRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupsCollectionId,
+        groupId
+      );
+      
+      return group.createdBy === userId;
+    } catch (error) {
+      console.error('Error checking group creator:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Leave a group (for non-creators) - removes membership but keeps chat history
+   */
+  async leaveGroup(userId: string, groupId: string): Promise<void> {
+    try {
+      console.log(`\n🚪 USER LEAVING GROUP...`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`🏷️ Group ID: ${groupId}`);
+      
+      // Check if user is the creator
+      const isCreator = await this.isGroupCreator(userId, groupId);
+      if (isCreator) {
+        throw new Error('Group creators cannot leave their own group. Use delete instead.');
+      }
+      
+      // Find and remove user's membership
+      const memberships = await this.getUserMemberships(userId);
+      const membershipToRemove = memberships.find(m => m.groupId === groupId);
+      
+      if (!membershipToRemove) {
+        throw new Error('You are not a member of this group');
+      }
+      
+      // Delete the membership record (this removes user from calendar)
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        membershipToRemove.$id
+      );
+      
+      console.log('✅ User successfully left the group');
+      console.log('💬 Chat history preserved');
+      
+    } catch (error: any) {
+      console.error('❌ Error leaving group:', error);
+      throw new Error(error.message || 'Failed to leave group. Please try again.');
+    }
+  }
+
+  /**
+   * Delete a group permanently (creators only) - removes everything
+   */
+  async deleteGroup(groupId: string, userId: string): Promise<void> {
+    try {
+      console.log(`\n🗑️ DELETING GROUP PERMANENTLY...`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`🏷️ Group ID: ${groupId}`);
+      
+      // Verify user is the creator
+      const isCreator = await this.isGroupCreator(userId, groupId);
+      if (!isCreator) {
+        throw new Error('Only the group creator can permanently delete the group');
+      }
+      
+      // Delete all group memberships
+      await this.deleteGroupMemberships(groupId);
+      
+      // Delete all calendar entries for this group
+      await this.deleteGroupCalendarEntries(groupId);
+      
+      // Delete all chat messages for this group
+      await this.deleteGroupChatMessages(groupId);
+      
+      // Finally, delete the group itself
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupsCollectionId,
+        groupId
+      );
+
+      console.log('✅ Group permanently deleted with all associated data');
+      
+    } catch (error: any) {
+      console.error('❌ Error deleting group:', error);
+      throw new Error(error.message || 'Failed to delete group. Please try again.');
+    }
+  }
+
+  /**
+   * Delete group calendar entries
+   */
+  private async deleteGroupCalendarEntries(groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.calendarEntriesCollectionId
+      );
+
+      const groupEntries = response.documents.filter((doc: any) => doc.groupId === groupId);
+      
+      const deletePromises = groupEntries.map(entry =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.calendarEntriesCollectionId,
+          entry.$id
+        )
+      );
+
+      await Promise.allSettled(deletePromises);
+      console.log(`🗑️ Deleted ${groupEntries.length} calendar entries`);
+      
+    } catch (error) {
+      console.warn('⚠️ Error deleting group calendar entries:', error);
+      // Don't throw - this is cleanup
+    }
+  }
+
+  /**
+   * Delete group chat messages
+   */
+  private async deleteGroupChatMessages(groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId
+      );
+
+      const groupMessages = response.documents.filter((doc: any) => doc.groupId === groupId);
+      
+      const deletePromises = groupMessages.map(message =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.chatMessagesCollectionId,
+          message.$id
+        )
+      );
+
+      await Promise.allSettled(deletePromises);
+      console.log(`🗑️ Deleted ${groupMessages.length} chat messages`);
+      
+    } catch (error) {
+      console.warn('⚠️ Error deleting group chat messages:', error);
+      // Don't throw - this is cleanup
+    }
+  }
+
+  // ============== EXISTING METHODS (with safe avatar handling) ==============
+
   /**
    * Create a new group with safe avatar upload attempt
    */
@@ -341,25 +497,6 @@ class GroupsService {
     } catch (error: any) {
       console.error('❌ Error fetching user groups:', error);
       throw new Error('Failed to fetch groups. Please try again.');
-    }
-  }
-
-  async deleteGroup(groupId: string): Promise<void> {
-    try {
-      console.log(`\n🗑️ DELETING GROUP: ${groupId}`);
-      
-      await this.deleteGroupMemberships(groupId);
-      
-      await databases.deleteDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupsCollectionId,
-        groupId
-      );
-
-      console.log('✅ Group deleted successfully');
-    } catch (error: any) {
-      console.error('❌ Error deleting group:', error);
-      throw new Error('Failed to delete group. Please try again.');
     }
   }
 

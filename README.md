@@ -36,7 +36,7 @@ You are a Principal Software Engineer with many years of industry knowledge. Som
 ## Todos
 
 1. User's are able to select a profile picture upon launch the app, however their profile picture icon isn't being shown on the calendar page. (DONE!)
-2. Only the creator of a group is able to permantly delete a group. When other users join that group and delete's said group, the user is removed from the calendar list of users, but their chat history remains. After the user deletes the group(NOT THE CREATOR), they no longer see that group listed in their list of groups on their group page.
+2. Only the creator of a group is able to permantly delete a group. When other users join that group and delete's said group, the user is removed from the calendar list of users, but their chat history remains. After the user deletes the group(NOT THE CREATOR), they no longer see that group listed in their list of groups on their group page. (DONE!)
 3. The streak counter on the calendar page isn't dynamically updating when I click on squares. For example if I have today and yesterday's squares selected, the steak should be two, but if only have today selected and missed yesterday square, the streak would be 1.
 4. On the calendar page, the seven circles that become more green as users click the corresponding day, that section takes up roughly 16% of the screen. and is centered.
 5. The workflow #5 componenet needs to take up 42% of the screen.
