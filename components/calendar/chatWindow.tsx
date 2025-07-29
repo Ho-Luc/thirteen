@@ -89,7 +89,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     <View style={styles.container}>
       {/* Chat Header */}
       <View style={styles.chatHeader}>
-        <Text style={styles.chatTitle}>{groupName} Chat</Text>
+        <Text style={styles.chatTitle}>{groupName} chat</Text>
       </View>
       
       {/* Messages - FIXED TO RESERVE SPACE FOR INPUT */}
