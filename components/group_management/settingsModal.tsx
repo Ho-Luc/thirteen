@@ -36,16 +36,12 @@ const SettingsModal: React.FC<EnhancedSettingsModalProps> = ({
 
   const checkGroupCreatorStatus = async () => {
     try {
-      setIsLoading(true);
-      console.log('🔍 Checking creator status for groups...');
-      
+      setIsLoading(true);      
       const statusPromises = groups.map(async (group) => {
         try {
           const isCreator = await groupsService.isGroupCreator(currentUserId, group.id);
-          console.log(`Group "${group.name}": Creator = ${isCreator}`);
           return { groupId: group.id, isCreator };
         } catch (error) {
-          console.error(`Error checking creator status for group ${group.id}:`, error);
           return { groupId: group.id, isCreator: false };
         }
       });
@@ -58,7 +54,6 @@ const SettingsModal: React.FC<EnhancedSettingsModalProps> = ({
       });
       
       setGroupCreatorStatus(statusMap);
-      console.log('✅ Creator status check completed:', statusMap);
       
     } catch (error) {
       console.error('❌ Error checking group creator status:', error);

@@ -1,4 +1,3 @@
-// app/my-groups/index.tsx - Updated with leave/delete logic for TODO #2
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Clipboard, Alert } from "react-native";
 import { useRouter, useNavigation } from "expo-router";

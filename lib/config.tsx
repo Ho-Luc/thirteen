@@ -1,4 +1,3 @@
-// lib/config.ts
 interface AppConfig {
   appwrite: {
     endpoint: string;
@@ -52,17 +51,7 @@ class ConfigService {
     // Validate IDs are not empty
     if (!appwrite.projectId || !appwrite.databaseId || !appwrite.groupsCollectionId) {
       throw new Error('All Appwrite IDs must be provided');
-    }
-
-    // Log configuration in development (but not the sensitive parts)
-    if (this.config.isDevelopment) {
-      console.log('Configuration loaded:', {
-        endpoint: appwrite.endpoint,
-        projectIdLength: appwrite.projectId.length,
-        databaseIdLength: appwrite.databaseId.length,
-        platform: appwrite.platform,
-      });
-    }
+    } 
   }
 
   public getAppwriteConfig() {
