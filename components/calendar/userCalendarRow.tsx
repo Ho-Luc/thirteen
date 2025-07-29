@@ -1,4 +1,3 @@
-// components/calendar/userCalendarRow.tsx - Complete file with debugging
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 
@@ -41,16 +40,9 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
 }) => {
   const streak = getUserStreak(member.userId);
 
-  // DETAILED AVATAR RENDERING DEBUG
-  console.log(`\n🎨 RENDERING ROW FOR: ${member.userName}`);
-  console.log(`🖼️ Avatar URL exists: ${!!member.avatarUrl}`);
-  console.log(`📏 Avatar URL length: ${member.avatarUrl?.length || 0}`);
-  console.log(`🔗 Avatar URL: ${member.avatarUrl?.substring(0, 80)}...`);
-  console.log(`🎯 Will render: ${member.avatarUrl ? 'Image Component' : 'Default Avatar'}`);
-
   return (
     <View style={styles.userRow}>
-      {/* Enhanced Avatar with Debugging */}
+      {/* Avatar */}
       <TouchableOpacity
         style={styles.avatarContainer}
         onPress={onAvatarPress}
@@ -58,35 +50,15 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
         activeOpacity={isCurrentUser ? 0.7 : 1}
       >
         {member.avatarUrl ? (
-          <>
-            {console.log(`📱 Creating Image component for ${member.userName}`)}
-            <Image 
-              source={{ uri: member.avatarUrl }} 
-              style={styles.avatar}
-              onLoadStart={() => console.log(`🔄 ${member.userName}: Image load started`)}
-              onLoad={(event) => {
-                console.log(`✅ ${member.userName}: Image loaded successfully`);
-                console.log(`📐 Image dimensions: ${event.nativeEvent.source.width}x${event.nativeEvent.source.height}`);
-              }}
-              onLoadEnd={() => console.log(`🏁 ${member.userName}: Image load ended`)}
-              onError={(error) => {
-                console.log(`❌ ${member.userName}: Image failed to load`);
-                console.log(`🔍 Error details:`, error.nativeEvent);
-                console.log(`🔗 Failed URL: ${member.avatarUrl}`);
-              }}
-              onProgress={(event) => {
-                console.log(`📊 ${member.userName}: Loading progress ${event.nativeEvent.loaded}/${event.nativeEvent.total}`);
-              }}
-              resizeMode="cover"
-            />
-          </>
+          <Image 
+            source={{ uri: member.avatarUrl }} 
+            style={styles.avatar}
+            resizeMode="cover"
+          />
         ) : (
-          <>
-            {console.log(`👤 Creating default avatar for ${member.userName}`)}
-            <View style={styles.defaultAvatar}>
-              <Text style={styles.defaultAvatarText}>👤</Text>
-            </View>
-          </>
+          <View style={styles.defaultAvatar}>
+            <Text style={styles.defaultAvatarText}>👤</Text>
+          </View>
         )}
       </TouchableOpacity>
 
@@ -126,12 +98,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 15,
+    paddingHorizontal: 8, // Reduced from 15 to 8 for less left spacing
+    paddingRight: 40, // Increased from 30 to 40 for more right spacing
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   avatarContainer: {
-    marginRight: 15,
+    marginRight: 12, // Reduced from 15 to 12
   },
   avatar: {
     width: 60,
@@ -157,8 +130,8 @@ const styles = StyleSheet.create({
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 50,
-    marginRight: 10,
+    width: 45, // Reduced from 50 to 45
+    marginRight: 8, // Reduced from 10 to 8
   },
   streakNumber: {
     fontSize: 16,
@@ -173,6 +146,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingRight: 20, // Increased from 15 to 20 for more space on right
   },
   calendarSquare: {
     width: 35,

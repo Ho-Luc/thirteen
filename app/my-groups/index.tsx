@@ -1,6 +1,3 @@
-// Fix 1: Clean up the my-groups/index.tsx imports
-// Remove the problematic avatarUploadService import
-
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Clipboard, Alert } from "react-native";
 import { useRouter, useNavigation } from "expo-router";
@@ -9,14 +6,16 @@ import { useRouter, useNavigation } from "expo-router";
 import GroupList from '../../components/group_management/groupList';
 import CreateGroupForm from '../../components/group_management/createGroupForm';
 import ShareKeyModal from '../../components/group_management/shareKeyModal';
-import SettingsModal from '../../components/group_management/settingsModal';
 import DeleteConfirmationModal from '../../components/group_management/deleteConfirmationModal';
 import JoinGroupButton from '../../components/group_management/joinGroupButton';
 import JoinGroupModal from '../../components/group_management/joinGroupModal';
 import { Group } from '../../components/group_management/types';
 import { groupsService } from '../../services/groupsService';
 import { userService } from '../../services/userService';
-// REMOVED: import { avatarUploadService } from '../../services/avatarUploadService';
+
+// Import the enhanced settings modal and new leave modal
+import SettingsModal from '../../components/group_management/settingsModal';
+import LeaveGroupModal from '../../components/group_management/leaveGroupModal';
 
 const CreateGroupsScreen = () => {
   // ALL HOOKS MUST BE AT THE TOP AND CALLED UNCONDITIONALLY
@@ -26,7 +25,9 @@ const CreateGroupsScreen = () => {
   const [newGroupShareKey, setNewGroupShareKey] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedGroupForDeletion, setSelectedGroupForDeletion] = useState<Group | null>(null);
+  const [selectedGroupForLeaving, setSelectedGroupForLeaving] = useState<Group | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
   const [showJoinGroupModal, setShowJoinGroupModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -192,7 +193,7 @@ const CreateGroupsScreen = () => {
     });
   };
 
-  // Handle delete group request
+  // Handle delete group request (for creators only)
   const handleDeleteGroupRequest = (groupToDelete: Group) => {
     setSelectedGroupForDeletion(groupToDelete);
     setShowSettingsModal(false);    
@@ -201,20 +202,54 @@ const CreateGroupsScreen = () => {
     }, 300);
   };
 
-  // Confirm and delete the group
+  // Handle leave group request (for non-creators)
+  const handleLeaveGroupRequest = (groupToLeave: Group) => {
+    setSelectedGroupForLeaving(groupToLeave);
+    setShowSettingsModal(false);    
+    setTimeout(() => {
+      setShowLeaveConfirmation(true);
+    }, 300);
+  };
+
+  // Confirm and delete the group (creators only)
   const handleConfirmDelete = async () => {
-    if (!selectedGroupForDeletion) return;
+    if (!selectedGroupForDeletion || !userId) return;
 
     try {
       setIsLoading(true);
-      await groupsService.deleteGroup(selectedGroupForDeletion.id);
+      
+      // Use enhanced deleteGroup method that requires userId
+      await groupsService.deleteGroup(selectedGroupForDeletion.id, userId);
+      
       setGroups(prevGroups => prevGroups.filter(group => group.id !== selectedGroupForDeletion.id));
       setShowDeleteConfirmation(false);
       setSelectedGroupForDeletion(null);
-      Alert.alert('Deleted', `"${selectedGroupForDeletion.name}" has been deleted.`);
+      Alert.alert('Deleted', `"${selectedGroupForDeletion.name}" has been permanently deleted.`);
     } catch (error) {
       console.error('Error deleting group:', error);
-      Alert.alert('Error', 'Failed to delete group. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to delete group. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Confirm and leave the group (non-creators only)
+  const handleConfirmLeave = async () => {
+    if (!selectedGroupForLeaving || !userId) return;
+
+    try {
+      setIsLoading(true);
+      
+      // Use new leaveGroup method
+      await groupsService.leaveGroup(userId, selectedGroupForLeaving.id);
+      
+      setGroups(prevGroups => prevGroups.filter(group => group.id !== selectedGroupForLeaving.id));
+      setShowLeaveConfirmation(false);
+      setSelectedGroupForLeaving(null);
+      Alert.alert('Left Group', `You have left "${selectedGroupForLeaving.name}". Your chat history remains visible to other members.`);
+    } catch (error) {
+      console.error('Error leaving group:', error);
+      Alert.alert('Error', error.message || 'Failed to leave group. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -224,6 +259,12 @@ const CreateGroupsScreen = () => {
   const handleCancelDelete = () => {
     setShowDeleteConfirmation(false);
     setSelectedGroupForDeletion(null);
+  };
+
+  // Cancel leaving
+  const handleCancelLeave = () => {
+    setShowLeaveConfirmation(false);
+    setSelectedGroupForLeaving(null);
   };
 
   if (isLoading) {
@@ -275,21 +316,35 @@ const CreateGroupsScreen = () => {
         isLoading={isLoading}
       />
       
-      {showSettingsModal && groups.length > 0 && (
+      {/* Enhanced Settings Modal with leave/delete logic */}
+      {showSettingsModal && groups.length > 0 && userId && (
         <SettingsModal
           visible={showSettingsModal}
           groups={groups}
+          currentUserId={userId}
           onClose={() => setShowSettingsModal(false)}
           onDeleteGroup={handleDeleteGroupRequest}
+          onLeaveGroup={handleLeaveGroupRequest}
         />
       )}
 
+      {/* Delete Confirmation Modal (for creators) */}
       {selectedGroupForDeletion && (
         <DeleteConfirmationModal
           visible={showDeleteConfirmation && !showSettingsModal}
           groupName={selectedGroupForDeletion.name}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+      )}
+
+      {/* Leave Confirmation Modal (for non-creators) */}
+      {selectedGroupForLeaving && (
+        <LeaveGroupModal
+          visible={showLeaveConfirmation && !showSettingsModal}
+          groupName={selectedGroupForLeaving.name}
+          onConfirm={handleConfirmLeave}
+          onCancel={handleCancelLeave}
         />
       )}
     </View>

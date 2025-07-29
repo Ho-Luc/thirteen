@@ -1,4 +1,4 @@
-// app/index.tsx
+// app/index.tsx - Cleaned for production (TODO #5)
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -20,7 +20,6 @@ const HomeScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Check if user exists on component mount
   useEffect(() => {
     checkUserExists();
   }, []);
@@ -35,7 +34,6 @@ const HomeScreen = () => {
       }
       setIsLoading(false);
     } catch (error) {
-      console.error('Error checking user:', error);
       setIsLoading(false);
     }
   };
@@ -45,9 +43,7 @@ const HomeScreen = () => {
     try {
       await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
       setUserProfile(profile);
-      console.log('User profile saved successfully:', profile.name);
     } catch (error) {
-      console.error('Error saving user profile:', error);
       Alert.alert('Error', 'Failed to save user profile. Please try again.');
     }
   };
@@ -62,30 +58,6 @@ const HomeScreen = () => {
   const handleProfileUpdated = (profile: UserProfile) => {
     saveUserProfile(profile);
     setShowEditProfile(false);
-  };
-
-  // Clear user data (for testing purposes)
-  const clearUser = async () => {
-    Alert.alert(
-      'Clear Profile',
-      'Are you sure you want to clear your profile? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem('userProfile');
-              setUserProfile(null);
-              console.log('User profile cleared');
-            } catch (error) {
-              console.error('Error clearing user profile:', error);
-            }
-          },
-        },
-      ]
-    );
   };
 
   if (isLoading) {
@@ -127,16 +99,6 @@ const HomeScreen = () => {
           >
             <Text style={styles.buttonText}>My Groups</Text>
           </TouchableOpacity>
-
-          {/* Debug button (only in development) */}
-          {__DEV__ && (
-            <TouchableOpacity
-              style={[styles.button, styles.debugButton]}
-              onPress={clearUser}
-            >
-              <Text style={styles.buttonText}>Clear Profile (Debug)</Text>
-            </TouchableOpacity>
-          )}
         </>
       ) : (
         <>
@@ -259,11 +221,6 @@ const styles = StyleSheet.create({
   },
   createProfileButton: {
     backgroundColor: '#28a745',
-  },
-  debugButton: {
-    backgroundColor: '#dc3545',
-    marginTop: 20,
-    minWidth: 150,
   },
   buttonText: {
     color: '#fff',

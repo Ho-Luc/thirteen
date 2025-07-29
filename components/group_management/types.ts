@@ -37,6 +37,13 @@ export interface DeleteConfirmationModalProps {
   onCancel: () => void;
 }
 
+export interface LeaveGroupModalProps {
+  visible: boolean;
+  groupName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
 export interface GroupListProps {
   groups: Group[];
   onGroupPress: (group: Group) => void;

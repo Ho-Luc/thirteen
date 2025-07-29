@@ -14,47 +14,6 @@ export const appwriteConfig = {
   avatarBucketId: process.env.EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID || '',
 };
 
-// Validate that core environment variables are present
-const validateConfig = () => {
-  const coreRequiredVars = [
-    'EXPO_PUBLIC_APPWRITE_PROJECT_ID',
-    'EXPO_PUBLIC_APPWRITE_DATABASE_ID',
-    'EXPO_PUBLIC_APPWRITE_GROUPS_COLLECTION_ID',
-    'EXPO_PUBLIC_APPWRITE_GROUP_MEMBERS_COLLECTION_ID'
-  ];
-  
-  const missing = coreRequiredVars.filter(varName => !process.env[varName]);
-  
-  if (missing.length > 0) {
-    console.warn(`Missing Appwrite environment variables: ${missing.join(', ')}`);
-    console.warn('App will use mock data for missing collections');
-  }
-
-  // Optional collections (calendar will use mock data if not available)
-  const optionalVars = [
-    'EXPO_PUBLIC_APPWRITE_CALENDAR_ENTRIES_COLLECTION_ID',
-    'EXPO_PUBLIC_APPWRITE_CHAT_MESSAGES_COLLECTION_ID',
-    'EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID'
-  ];
-
-  const missingOptional = optionalVars.filter(varName => !process.env[varName]);
-  if (missingOptional.length > 0) {
-    console.log(`Optional Appwrite collections not configured: ${missingOptional.join(', ')}`);
-    console.log('These features will use mock data until collections are created');
-  }
-
-  // Validate bucket configuration
-  if (!appwriteConfig.avatarBucketId) {
-    console.warn('⚠️ Avatar bucket not configured - avatar uploads will fail');
-    console.warn('Please set EXPO_PUBLIC_APPWRITE_AVATAR_BUCKET_ID in your .env file');
-  } else {
-    console.log('✅ Avatar bucket configured:', appwriteConfig.avatarBucketId);
-  }
-};
-
-// Validate config on import
-validateConfig();
-
 // Initialize Appwrite client
 const client = new Client();
 

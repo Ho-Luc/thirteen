@@ -1,4 +1,3 @@
-// components/user/userProfileCreator.tsx - Updated with auto cloud upload
 import React, { useState } from 'react';
 import {
   View,
@@ -149,26 +148,21 @@ const UserProfileCreator: React.FC<UserProfileCreatorProps> = ({
       // If this is an update and user is in groups, sync avatar to cloud
       if (isEditing && selectedAvatarUri) {
         try {
-          console.log('🔄 Profile updated - syncing avatar to all groups...');
-          
+
           // Get current user ID
           const userId = await userService.getOrCreateUserId();
           
           // Process avatar for all groups (non-blocking)
           autoCloudUploadService.processUserAvatar(userId).then(() => {
-            console.log('✅ Avatar synced to all groups in background');
           }).catch((error) => {
-            console.warn('⚠️ Background avatar sync failed:', error.message);
           });
           
         } catch (syncError: any) {
-          console.warn('⚠️ Avatar sync failed (non-critical):', syncError.message);
           // Don't show error to user - this is background enhancement
         }
       }
       
     } catch (error: any) {
-      console.error('Profile save error:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsProcessing(false);

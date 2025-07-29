@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 
 interface ChatMessage {
@@ -23,6 +21,7 @@ interface ChatWindowProps {
   currentUserId: string;
   onSendMessage: (message: string) => void;
   isLoading?: boolean;
+  groupName?: string;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -30,11 +29,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   currentUserId,
   onSendMessage,
   isLoading = false,
+  groupName = 'Group',
 }) => {
   const [newMessage, setNewMessage] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => {
@@ -90,17 +89,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     <View style={styles.container}>
       {/* Chat Header */}
       <View style={styles.chatHeader}>
-        <Text style={styles.chatTitle}>Group Chat</Text>
-        <Text style={styles.messageCount}>{messages.length} messages</Text>
+        <Text style={styles.chatTitle}>{groupName} chat</Text>
       </View>
       
-      {/* Messages */}
+      {/* Messages - FIXED TO RESERVE SPACE FOR INPUT */}
       <ScrollView 
         ref={scrollViewRef}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
       >
         {messages.length === 0 ? (
           <View style={styles.emptyChat}>
@@ -112,41 +109,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         )}
       </ScrollView>
       
-      {/* Message Input */}
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="Send a message"
-            value={newMessage}
-            onChangeText={setNewMessage}
-            multiline
-            maxLength={500}
-            onSubmitEditing={handleSendMessage}
-            returnKeyType="send"
-            blurOnSubmit={false}
-            editable={!isLoading}
-          />
-          <TouchableOpacity 
-            style={[
-              styles.sendButton,
-              (newMessage.trim() === '' || isLoading) && styles.sendButtonDisabled
-            ]}
-            onPress={handleSendMessage}
-            disabled={newMessage.trim() === '' || isLoading}
-          >
-            <Text style={[
-              styles.sendButtonText,
-              (newMessage.trim() === '' || isLoading) && styles.sendButtonTextDisabled
-            ]}>
-              {isLoading ? '...' : 'Send'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+      {/* Input Field - ALWAYS VISIBLE AT BOTTOM */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.messageInput}
+          placeholder="Send a message"
+          value={newMessage}
+          onChangeText={setNewMessage}
+          returnKeyType="send"
+          onSubmitEditing={handleSendMessage}
+          editable={!isLoading}
+          multiline={false}
+        />
+        <TouchableOpacity 
+          style={[
+            styles.sendButton,
+            (newMessage.trim() === '' || isLoading) && styles.sendButtonDisabled
+          ]}
+          onPress={handleSendMessage}
+          disabled={newMessage.trim() === '' || isLoading}
+        >
+          <Text style={[
+            styles.sendButtonText,
+            (newMessage.trim() === '' || isLoading) && styles.sendButtonTextDisabled
+          ]}>
+            {isLoading ? '...' : 'Send'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -157,9 +147,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
@@ -171,23 +158,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
-  messageCount: {
-    fontSize: 12,
-    color: '#666',
-  },
   messagesContainer: {
     flex: 1,
     paddingHorizontal: 15,
   },
   messagesContent: {
     paddingVertical: 10,
+    paddingBottom: 20, // Extra padding at bottom for better spacing
     flexGrow: 1,
   },
   emptyChat: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 20,
   },
   emptyChatText: {
     fontSize: 16,
@@ -250,25 +234,27 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
     backgroundColor: '#fff',
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    minHeight: 60, // Ensure minimum height for input area
   },
   messageInput: {
     flex: 1,
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 20,
+    borderRadius: 25,
     paddingHorizontal: 15,
     paddingVertical: 10,
     marginRight: 10,
-    maxHeight: 100,
     fontSize: 16,
-    textAlignVertical: 'top',
+    backgroundColor: '#fff',
+    maxHeight: 100, // Prevent input from getting too tall
   },
   sendButton: {
     backgroundColor: '#4287f5',
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 25,
+    minHeight: 40,
     justifyContent: 'center',
     alignItems: 'center',
     minWidth: 60,

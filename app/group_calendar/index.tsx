@@ -1,4 +1,3 @@
-// app/group_calendar/index.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -9,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  TouchableOpacity,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { calendarService } from '../../services/calendarService';
@@ -20,7 +18,6 @@ import UserAvatarPicker from '../../components/calendar/userAvatarPicker';
 import WeekHeader from '../../components/calendar/weekHeader';
 import UserCalendarRow from '../../components/calendar/userCalendarRow';
 import ChatWindow from '../../components/calendar/chatWindow';
-import { storage, appwriteConfig } from '../../lib/appwrite';
 
 interface GroupMember {
   id: string;
@@ -69,9 +66,11 @@ const GroupCalendar = () => {
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
 
-  // Get screen dimensions
+  // Get screen dimensions and calculate layout proportions
   const screenHeight = Dimensions.get('window').height;
-  const chatHeight = screenHeight * 0.33; // 33% of screen height
+  const headerHeight = screenHeight * 0.10; // 10% for week header
+  const calendarRowsHeight = screenHeight * 0.38; // 38% for user calendar rows
+  const chatHeight = screenHeight * 0.52; // 52% for chat
 
   // Get current week dates
   const getCurrentWeek = () => {
@@ -111,30 +110,19 @@ const GroupCalendar = () => {
   // Automatically process all avatars when calendar loads
   const autoProcessAvatarsOnLoad = async () => {
     try {
-      console.log('\n🔄 AUTO-PROCESSING AVATARS ON CALENDAR LOAD...');
-      
-      // Only process current user's avatar automatically
       const { userProfileService } = await import('../../services/userProfileService');
       const userProfile = await userProfileService.getUserProfile();
       
       if (userProfile?.avatarUri && userProfile.avatarUri.startsWith('file://')) {
-        console.log('📱 Found local avatar - processing for group visibility...');
-        
-        // Process avatar in background (non-blocking)
         groupsService.forceAvatarUploadToAllGroups(currentUserId)
           .then(() => {
-            console.log('✅ Background avatar processing completed');
-            // Silently reload members to show updated avatar
             loadGroupMembers(currentUserId);
           })
           .catch((error) => {
-            console.warn('⚠️ Background avatar processing failed:', error.message);
+            // Handle error silently
           });
       }
-      
     } catch (error: any) {
-      console.warn('⚠️ Auto avatar processing failed:', error.message);
-      // Don't show error - this is background enhancement
     }
   };
 
@@ -142,26 +130,17 @@ const GroupCalendar = () => {
     try {
       setIsLoading(true);
       
-      // First, get the current user ID
       const userId = await userService.getOrCreateUserId();
       setCurrentUserId(userId);
-      console.log('Current user ID:', userId);
 
-      // Sync user profile to all groups (now includes avatar upload)
       await groupsService.syncUserProfileToAllGroups(userId);
 
-      // Get group information
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
-      console.log('Group info:', group);
       
-      // Load group members
       await loadGroupMembers(userId);
-      
-      // Auto-process avatars for group visibility (background)
       autoProcessAvatarsOnLoad();
       
-      // Load other calendar data
       await Promise.all([
         loadCalendarEntries(),
         loadUserStreaks(),
@@ -170,7 +149,6 @@ const GroupCalendar = () => {
       
     } catch (error) {
       Alert.alert('Error', 'Failed to load calendar data');
-      console.error('Calendar initialization error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -178,31 +156,17 @@ const GroupCalendar = () => {
 
   const loadGroupMembers = async (userId: string) => {
     try {
-      console.log('Loading group members for group:', params.groupId);
-      
-      // Get all group members from the database
       const members = await calendarService.getGroupMembers(params.groupId);
-      console.log('Found group members:', members);
-      
       setGroupMembers(members);
       
-      // Find current user's name from the group members
       const currentUser = members.find(member => member.userId === userId);
       if (currentUser) {
         setCurrentUserName(currentUser.userName);
-        console.log('Current user name:', currentUser.userName);
       } else {
-        console.warn('Current user not found in group members');
         setCurrentUserName('You');
       }
-      
-      if (members.length === 0) {
-        console.warn('No group members found for group:', params.groupId);
-      }
-      
     } catch (error) {
-      console.error('Error loading group members:', error);
-      setGroupMembers([]); // Set empty array on error
+      setGroupMembers([]);
       Alert.alert('Error', 'Failed to load group members');
     }
   };
@@ -211,9 +175,8 @@ const GroupCalendar = () => {
     try {
       const entries = await calendarService.getCalendarEntries(params.groupId, currentWeek);
       setCalendarEntries(entries);
-      console.log('Loaded calendar entries:', entries.length);
     } catch (error) {
-      console.error('Error loading calendar entries:', error);
+      // Handle error silently
     }
   };
 
@@ -221,21 +184,17 @@ const GroupCalendar = () => {
     try {
       const streaks = await calendarService.getUserStreaks(params.groupId);
       setUserStreaks(streaks);
-      console.log('Loaded user streaks:', streaks);
     } catch (error) {
-      console.error('Error loading user streaks:', error);
+      // Handle error silently
     }
   };
 
   const loadChatMessages = async () => {
     try {
-      console.log('Loading chat messages for group:', params.groupId);
       const messages = await calendarService.getChatMessages(params.groupId);
       setChatMessages(messages);
-      console.log('Loaded chat messages:', messages);
     } catch (error) {
-      console.error('Error loading chat messages:', error);
-      // Don't show alert for chat errors, just log them
+      // Handle error silently
     }
   };
 
@@ -244,7 +203,6 @@ const GroupCalendar = () => {
   };
 
   const toggleDay = async (userId: string, date: Date) => {
-    // Only allow users to edit their own row
     if (userId !== currentUserId) {
       Alert.alert('Permission Denied', 'You can only edit your own calendar entries');
       return;
@@ -257,7 +215,6 @@ const GroupCalendar = () => {
       );
 
       if (existingEntry) {
-        // Toggle existing entry
         const updatedEntry = await calendarService.updateCalendarEntry(
           existingEntry.id,
           !existingEntry.completed
@@ -269,7 +226,6 @@ const GroupCalendar = () => {
           )
         );
       } else {
-        // Create new entry
         const newEntry = await calendarService.createCalendarEntry({
           userId,
           groupId: params.groupId,
@@ -280,46 +236,27 @@ const GroupCalendar = () => {
         setCalendarEntries(prev => [...prev, newEntry]);
       }
 
-      // Recalculate streaks
       await loadUserStreaks();
-      
     } catch (error) {
       Alert.alert('Error', 'Failed to update calendar entry');
-      console.error('Toggle day error:', error);
     }
   };
 
   const handleAvatarUpdate = async (avatarUrl: string) => {
     try {
-      // Check if this is a local file URL that needs uploading
       if (avatarUrl.startsWith('file://')) {
-        console.log('🔄 Uploading local avatar to cloud storage...');
-        
-        // Upload to Appwrite storage
         const cloudUrl = await avatarUploadService.uploadAvatar(avatarUrl, currentUserId);
-        console.log('☁️ Avatar uploaded successfully:', cloudUrl);
-        console.log(`🔗 Cloud URL length: ${cloudUrl.length} characters`);
-        
-        // Update calendar service with cloud URL
         await calendarService.updateUserAvatar(currentUserId, params.groupId, cloudUrl);
-        console.log('✅ Avatar URL saved to database');
       } else if (avatarUrl === '') {
-        // Remove avatar
         await calendarService.updateUserAvatar(currentUserId, params.groupId, '');
-        console.log('🗑️ Avatar removed from database');
       } else {
-        // Direct URL update (shouldn't happen with current flow, but good fallback)
         await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
-        console.log('✅ Avatar URL updated in database');
       }
       
       await loadGroupMembers(currentUserId);
       setShowAvatarPicker(false);
-      
-      console.log('🎉 Avatar update process completed successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update avatar');
-      console.error('Avatar update error:', error);
     }
   };
 
@@ -355,7 +292,6 @@ const GroupCalendar = () => {
     };
   };
 
-  // Fixed sendMessage function
   const sendMessage = async (message: string): Promise<void> => {
     if (!currentUserId || !currentUserName) {
       Alert.alert('Error', 'User information not loaded');
@@ -365,7 +301,6 @@ const GroupCalendar = () => {
     try {
       setIsSendingMessage(true);
       
-      // Send message to database
       const newChatMessage = await calendarService.sendChatMessage(
         params.groupId,
         currentUserId,
@@ -373,12 +308,8 @@ const GroupCalendar = () => {
         message
       );
       
-      // Add message to local state
       setChatMessages(prev => [...prev, newChatMessage]);
-      
-      console.log('Message sent successfully:', newChatMessage);
     } catch (error: any) {
-      console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setIsSendingMessage(false);
@@ -423,48 +354,46 @@ const GroupCalendar = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.currentDate}>{getCurrentDateString()}</Text>
-        {params.groupName && (
-          <Text style={styles.groupName}>{params.groupName}</Text>
-        )}
+      {/* Week Header - 10% of screen */}
+      <View style={[styles.weekHeaderContainer, { height: headerHeight }]}>
+        <WeekHeader
+          weekDays={weekDays}
+          currentWeek={currentWeek}
+          getDayCompletionData={getDayCompletionData}
+          currentDate={getCurrentDateString()}
+        />
       </View>
 
-      {/* Week Header - Progressive completion circles */}
-      <WeekHeader
-        weekDays={weekDays}
-        currentWeek={currentWeek}
-        getDayCompletionData={getDayCompletionData}
-      />
+      {/* User Calendar Rows - 38% of screen */}
+      <View style={[styles.userRowsContainer, { height: calendarRowsHeight }]}>
+        <ScrollView 
+          style={styles.userRowsScrollView} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.userRowsContent}
+        >
+          {groupMembers.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>
+                No group members found. Make sure you've joined this group or that members have been added.
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                Group ID: {params.groupId}
+              </Text>
+            </View>
+          ) : (
+            groupMembers.map((member) => renderUserRow(member))
+          )}
+        </ScrollView>
+      </View>
 
-      {/* User Calendar Rows - Scrollable 2/3 */}
-      <ScrollView 
-        style={styles.userRowsContainer} 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.userRowsContent}
-      >
-        {groupMembers.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.emptyStateText}>
-              No group members found. Make sure you've joined this group or that members have been added.
-            </Text>
-            <Text style={styles.emptyStateSubtext}>
-              Group ID: {params.groupId}
-            </Text>
-          </View>
-        ) : (
-          groupMembers.map((member) => renderUserRow(member))
-        )}
-      </ScrollView>
-
-      {/* Chat Window - Bottom 1/3 */}
+      {/* Chat Window - 52% of screen */}
       <View style={[styles.chatContainer, { height: chatHeight }]}>
         <ChatWindow
           messages={chatMessages}
           currentUserId={currentUserId}
           onSendMessage={sendMessage}
           isLoading={isSendingMessage}
+          groupName={params.groupName}
         />
       </View>
 
@@ -494,34 +423,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
   },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 8,
+  weekHeaderContainer: {
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#e0e0e0',
-  },
-  currentDate: {
-    fontSize: 16,
-    color: '#4287f5',
-    marginBottom: 2,
-  },
-  groupName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   userRowsContainer: {
-    height: '50%', // Fixed height - 50% of available space
     backgroundColor: '#fff',
+    borderBottomWidth: 2,
+    borderBottomColor: '#e0e0e0',
+  },
+  userRowsScrollView: {
+    flex: 1,
   },
   userRowsContent: {
     paddingBottom: 10,
+    paddingRight: 25,
   },
   chatContainer: {
-    borderTopWidth: 2,
-    borderTopColor: '#e0e0e0',
-    // Height will be set dynamically via inline style
+    backgroundColor: '#fff',
+    flex: 1,
   },
   emptyStateContainer: {
     flex: 1,

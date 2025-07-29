@@ -4,6 +4,7 @@ import { View, Text, StyleSheet } from 'react-native';
 interface WeekHeaderProps {
   weekDays: string[];
   currentWeek: Date[];
+  currentDate: string; // Added current date prop
   getDayCompletionData: (date: Date) => {
     completedCount: number;
     totalMembers: number;
@@ -15,6 +16,7 @@ interface WeekHeaderProps {
 const WeekHeader: React.FC<WeekHeaderProps> = ({
   weekDays,
   currentWeek,
+  currentDate, // Added current date prop
   getDayCompletionData,
 }) => {
   const renderDayHeader = (date: Date, index: number) => {
@@ -48,8 +50,10 @@ const WeekHeader: React.FC<WeekHeaderProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.avatarPlaceholder} />
-      <View style={styles.streakPlaceholder} />
+      {/* Current Date at the top */}
+      <Text style={styles.currentDate}>{currentDate}</Text>
+      
+      {/* Centered row of day headers */}
       <View style={styles.dayHeadersRow}>
         {currentWeek.map((date, index) => renderDayHeader(date, index))}
       </View>
@@ -59,38 +63,37 @@ const WeekHeader: React.FC<WeekHeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 15,
+    paddingTop: 0, // No top padding
+    paddingBottom: 0, // No bottom padding
+    paddingHorizontal: 20,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  avatarPlaceholder: {
-    width: 60,
-    marginRight: 15,
-  },
-  streakPlaceholder: {
-    width: 50,
-    marginRight: 10,
+  currentDate: {
+    fontSize: 16,
+    color: '#4287f5',
+    marginBottom: 4, // Reduced margin between date and circles
+    textAlign: 'center',
   },
   dayHeadersRow: {
-    flex: 1,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-evenly', // Changed to space-evenly for better centering
+    alignItems: 'center',
+    width: '90%', // Constrain width for better centering
+    maxWidth: 350, // Maximum width to prevent over-stretching
   },
   dayHeader: {
     alignItems: 'center',
-    width: 35,
+    width: 40, // Slightly wider for better spacing
   },
   dayCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 2, // Reduced from 4 to 2 for very tight spacing
     position: 'relative',
     overflow: 'hidden',
   },
@@ -101,7 +104,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: '#ffc107', // Yellow background
-    borderRadius: 15,
+    borderRadius: 16,
   },
   dayCircleProgress: {
     position: 'absolute',
@@ -109,7 +112,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#28a745', // Green progress fill
-    borderRadius: 15,
+    borderRadius: 16,
   },
   dayLetter: {
     fontSize: 14,

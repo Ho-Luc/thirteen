@@ -1,13 +1,9 @@
-// services/userProfileService.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile } from '../components/user/userProfileCreator';
 
 const USER_PROFILE_KEY = 'userProfile';
 
 class UserProfileService {
-  /**
-   * Get the current user profile from AsyncStorage
-   */
   async getUserProfile(): Promise<UserProfile | null> {
     try {
       const storedUserData = await AsyncStorage.getItem(USER_PROFILE_KEY);
@@ -16,50 +12,21 @@ class UserProfileService {
       }
       return null;
     } catch (error) {
-      console.error('Error getting user profile:', error);
       return null;
     }
   }
-
   /**
    * Save user profile to AsyncStorage
    */
   async saveUserProfile(profile: UserProfile): Promise<boolean> {
     try {
       await AsyncStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
-      console.log('User profile saved successfully:', profile.name);
       return true;
     } catch (error) {
-      console.error('Error saving user profile:', error);
       return false;
     }
   }
-  async debugUserProfile(): Promise<void> {
-    try {
-      console.log('\n🔍 DEBUGGING USER PROFILE...');
-      
-      const profile = await this.getUserProfile();
-      
-      if (!profile) {
-        console.log('❌ No user profile found');
-        return;
-      }
-      
-      console.log('👤 User Profile Details:');
-      console.log(`Name: ${profile.name}`);
-      console.log(`Has Avatar: ${!!profile.avatarUri}`);
-      console.log(`Avatar URI: ${profile.avatarUri || 'NONE'}`);
-      console.log(`Avatar Length: ${profile.avatarUri?.length || 0} characters`);
-      
-      if (profile.avatarUri) {
-        console.log(`Avatar Type: ${profile.avatarUri.startsWith('file://') ? 'Local File' : 'Cloud URL'}`);
-        console.log(`Avatar Preview: ${profile.avatarUri.substring(0, 100)}...`);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Failed to debug user profile:', error);
-    }
-  }
+
   /**
    * Update existing user profile
    */
@@ -78,7 +45,6 @@ class UserProfileService {
       const success = await this.saveUserProfile(updatedProfile);
       return success ? updatedProfile : null;
     } catch (error) {
-      console.error('Error updating user profile:', error);
       return null;
     }
   }
@@ -89,10 +55,8 @@ class UserProfileService {
   async deleteUserProfile(): Promise<boolean> {
     try {
       await AsyncStorage.removeItem(USER_PROFILE_KEY);
-      console.log('User profile deleted successfully');
       return true;
     } catch (error) {
-      console.error('Error deleting user profile:', error);
       return false;
     }
   }
@@ -181,7 +145,6 @@ class UserProfileService {
         avatarUrl: profile.avatarUri,
       };
     } catch (error) {
-      console.error('Error creating group membership data:', error);
       return null;
     }
   }
