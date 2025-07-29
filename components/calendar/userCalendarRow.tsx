@@ -1,4 +1,4 @@
-// components/calendar/userCalendarRow.tsx - Updated with right margin
+// components/calendar/userCalendarRow.tsx - Updated with better spacing
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 
@@ -99,13 +99,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 15,
-    paddingRight: 30, // Increased from 25 to 30
+    paddingHorizontal: 8, // Reduced from 15 to 8 for less left spacing
+    paddingRight: 40, // Increased from 30 to 40 for more right spacing
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   avatarContainer: {
-    marginRight: 15,
+    marginRight: 12, // Reduced from 15 to 12
   },
   avatar: {
     width: 60,
@@ -131,8 +131,8 @@ const styles = StyleSheet.create({
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 50,
-    marginRight: 10,
+    width: 45, // Reduced from 50 to 45
+    marginRight: 8, // Reduced from 10 to 8
   },
   streakNumber: {
     fontSize: 16,
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingRight: 15, // Increased from 10 to 15
+    paddingRight: 20, // Increased from 15 to 20 for more space on right
   },
   calendarSquare: {
     width: 35,

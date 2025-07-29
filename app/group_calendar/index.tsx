@@ -1,4 +1,4 @@
-// app/group_calendar/index.tsx - Updated with proper screen proportions for TODO #4
+// app/group_calendar/index.tsx - Fixed layout for TODO #4
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -10,7 +10,7 @@ import {
   Platform,
   Dimensions,
   TouchableOpacity,
-  TextInput, // Added TextInput back
+  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { calendarService } from '../../services/calendarService';
@@ -69,13 +69,12 @@ const GroupCalendar = () => {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
-  const [newMessage, setNewMessage] = useState<string>(''); // Added state for input
 
-  // Get screen dimensions and calculate layout proportions - ENSURE INPUT VISIBILITY
+  // Get screen dimensions and calculate layout proportions - EVEN MORE COMPACT HEADER
   const screenHeight = Dimensions.get('window').height;
-  const headerHeight = screenHeight * 0.12; // 12% for week header (reduced)
-  const calendarRowsHeight = screenHeight * 0.28; // 28% for user calendar rows (reduced)
-  const chatHeight = screenHeight * 0.60; // 60% for chat (increased significantly)
+  const headerHeight = screenHeight * 0.10; // Reduced from 12% to 10% for ultra-compact header
+  const calendarRowsHeight = screenHeight * 0.38; // Increased from 36% to 38% 
+  const chatHeight = screenHeight * 0.52; // 52% for chat (unchanged)
 
   // Get current week dates
   const getCurrentWeek = () => {
@@ -115,29 +114,23 @@ const GroupCalendar = () => {
   // Automatically process all avatars when calendar loads
   const autoProcessAvatarsOnLoad = async () => {
     try {
-      console.log('\n🔄 AUTO-PROCESSING AVATARS ON CALENDAR LOAD...');
-      
       // Only process current user's avatar automatically
       const { userProfileService } = await import('../../services/userProfileService');
       const userProfile = await userProfileService.getUserProfile();
       
       if (userProfile?.avatarUri && userProfile.avatarUri.startsWith('file://')) {
-        console.log('📱 Found local avatar - processing for group visibility...');
-        
         // Process avatar in background (non-blocking)
         groupsService.forceAvatarUploadToAllGroups(currentUserId)
           .then(() => {
-            console.log('✅ Background avatar processing completed');
             // Silently reload members to show updated avatar
             loadGroupMembers(currentUserId);
           })
           .catch((error) => {
-            console.warn('⚠️ Background avatar processing failed:', error.message);
+            // Don't show error - this is background enhancement
           });
       }
       
     } catch (error: any) {
-      console.warn('⚠️ Auto avatar processing failed:', error.message);
       // Don't show error - this is background enhancement
     }
   };
@@ -149,7 +142,6 @@ const GroupCalendar = () => {
       // First, get the current user ID
       const userId = await userService.getOrCreateUserId();
       setCurrentUserId(userId);
-      console.log('Current user ID:', userId);
 
       // Sync user profile to all groups (now includes avatar upload)
       await groupsService.syncUserProfileToAllGroups(userId);
@@ -157,7 +149,6 @@ const GroupCalendar = () => {
       // Get group information
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
-      console.log('Group info:', group);
       
       // Load group members
       await loadGroupMembers(userId);
@@ -174,7 +165,6 @@ const GroupCalendar = () => {
       
     } catch (error) {
       Alert.alert('Error', 'Failed to load calendar data');
-      console.error('Calendar initialization error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -182,30 +172,19 @@ const GroupCalendar = () => {
 
   const loadGroupMembers = async (userId: string) => {
     try {
-      console.log('Loading group members for group:', params.groupId);
-      
       // Get all group members from the database
       const members = await calendarService.getGroupMembers(params.groupId);
-      console.log('Found group members:', members);
-      
       setGroupMembers(members);
       
       // Find current user's name from the group members
       const currentUser = members.find(member => member.userId === userId);
       if (currentUser) {
         setCurrentUserName(currentUser.userName);
-        console.log('Current user name:', currentUser.userName);
       } else {
-        console.warn('Current user not found in group members');
         setCurrentUserName('You');
       }
       
-      if (members.length === 0) {
-        console.warn('No group members found for group:', params.groupId);
-      }
-      
     } catch (error) {
-      console.error('Error loading group members:', error);
       setGroupMembers([]); // Set empty array on error
       Alert.alert('Error', 'Failed to load group members');
     }
@@ -215,9 +194,8 @@ const GroupCalendar = () => {
     try {
       const entries = await calendarService.getCalendarEntries(params.groupId, currentWeek);
       setCalendarEntries(entries);
-      console.log('Loaded calendar entries:', entries.length);
     } catch (error) {
-      console.error('Error loading calendar entries:', error);
+      // Handle error silently
     }
   };
 
@@ -225,20 +203,16 @@ const GroupCalendar = () => {
     try {
       const streaks = await calendarService.getUserStreaks(params.groupId);
       setUserStreaks(streaks);
-      console.log('Loaded user streaks:', streaks);
     } catch (error) {
-      console.error('Error loading user streaks:', error);
+      // Handle error silently
     }
   };
 
   const loadChatMessages = async () => {
     try {
-      console.log('Loading chat messages for group:', params.groupId);
       const messages = await calendarService.getChatMessages(params.groupId);
       setChatMessages(messages);
-      console.log('Loaded chat messages:', messages);
     } catch (error) {
-      console.error('Error loading chat messages:', error);
       // Don't show alert for chat errors, just log them
     }
   };
@@ -289,7 +263,6 @@ const GroupCalendar = () => {
       
     } catch (error) {
       Alert.alert('Error', 'Failed to update calendar entry');
-      console.error('Toggle day error:', error);
     }
   };
 
@@ -297,33 +270,24 @@ const GroupCalendar = () => {
     try {
       // Check if this is a local file URL that needs uploading
       if (avatarUrl.startsWith('file://')) {
-        console.log('🔄 Uploading local avatar to cloud storage...');
-        
         // Upload to Appwrite storage
         const cloudUrl = await avatarUploadService.uploadAvatar(avatarUrl, currentUserId);
-        console.log('☁️ Avatar uploaded successfully:', cloudUrl);
-        console.log(`🔗 Cloud URL length: ${cloudUrl.length} characters`);
         
         // Update calendar service with cloud URL
         await calendarService.updateUserAvatar(currentUserId, params.groupId, cloudUrl);
-        console.log('✅ Avatar URL saved to database');
       } else if (avatarUrl === '') {
         // Remove avatar
         await calendarService.updateUserAvatar(currentUserId, params.groupId, '');
-        console.log('🗑️ Avatar removed from database');
       } else {
         // Direct URL update (shouldn't happen with current flow, but good fallback)
         await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
-        console.log('✅ Avatar URL updated in database');
       }
       
       await loadGroupMembers(currentUserId);
       setShowAvatarPicker(false);
       
-      console.log('🎉 Avatar update process completed successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update avatar');
-      console.error('Avatar update error:', error);
     }
   };
 
@@ -380,22 +344,11 @@ const GroupCalendar = () => {
       // Add message to local state
       setChatMessages(prev => [...prev, newChatMessage]);
       
-      console.log('Message sent successfully:', newChatMessage);
     } catch (error: any) {
-      console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setIsSendingMessage(false);
     }
-  };
-
-  // Handle input message send
-  const handleSendMessage = () => {
-    const trimmedMessage = newMessage.trim();
-    if (trimmedMessage === '' || isSendingMessage) return;
-    
-    sendMessage(trimmedMessage);
-    setNewMessage(''); // Clear input after sending
   };
 
   const renderUserRow = (member: GroupMember) => {
@@ -436,7 +389,7 @@ const GroupCalendar = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Week Header - 12% of screen */}
+      {/* Week Header - 10% of screen */}
       <View style={[styles.weekHeaderContainer, { height: headerHeight }]}>
         <WeekHeader
           weekDays={weekDays}
@@ -446,7 +399,7 @@ const GroupCalendar = () => {
         />
       </View>
 
-      {/* User Calendar Rows - 28% of screen */}
+      {/* User Calendar Rows - 38% of screen */}
       <View style={[styles.userRowsContainer, { height: calendarRowsHeight }]}>
         <ScrollView 
           style={styles.userRowsScrollView} 
@@ -468,43 +421,15 @@ const GroupCalendar = () => {
         </ScrollView>
       </View>
 
-      {/* Chat Window - 60% of screen - BIGGER FOR INPUT */}
+      {/* Chat Window - 52% of screen - DOUBLED IN SIZE */}
       <View style={[styles.chatContainer, { height: chatHeight }]}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.chatTitle}>{params.groupName} Chat</Text>
-        </View>
-        
-        <ScrollView style={styles.messagesArea}>
-          {chatMessages.map((message) => (
-            <View key={message.id} style={styles.messageRow}>
-              <Text style={styles.messageText}>
-                {message.userName}: {message.message}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-        
-        {/* INPUT AREA - FORCED TO BOTTOM */}
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="Send a message"
-            value={newMessage}
-            onChangeText={setNewMessage}
-            returnKeyType="send"
-            onSubmitEditing={handleSendMessage}
-            editable={!isSendingMessage}
-          />
-          <TouchableOpacity 
-            style={styles.sendButton}
-            onPress={handleSendMessage}
-            disabled={isSendingMessage || newMessage.trim() === ''}
-          >
-            <Text style={styles.sendButtonText}>
-              {isSendingMessage ? '...' : 'Send'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <ChatWindow
+          messages={chatMessages}
+          currentUserId={currentUserId}
+          onSendMessage={sendMessage}
+          isLoading={isSendingMessage}
+          groupName={params.groupName}
+        />
       </View>
 
       {/* Avatar Picker Modal */}
@@ -540,87 +465,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingTop: 0, // Remove all top padding
-    paddingBottom: 8, // Minimal bottom padding
+    paddingTop: 0, // No top padding to reduce white space above
+    paddingBottom: 0, // No bottom padding to reduce white space below
   },
   userRowsContainer: {
     backgroundColor: '#fff',
-    overflow: 'hidden', // Ensure content doesn't overflow
+    borderBottomWidth: 2,
+    borderBottomColor: '#e0e0e0',
   },
   userRowsScrollView: {
     flex: 1,
   },
   userRowsContent: {
     paddingBottom: 10,
-    paddingRight: 15, // Added margin to the right of user calendar rows
+    paddingRight: 25, // Increased right padding for more space on right side
   },
   chatContainer: {
-    borderTopWidth: 2,
-    borderTopColor: '#e0e0e0',
     backgroundColor: '#fff',
-  },
-  chatHeader: {
-    height: 50,
-    paddingHorizontal: 15,
-    justifyContent: 'center',
-    backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  chatTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  messagesArea: {
-    flex: 1,
-    paddingHorizontal: 15,
-    paddingBottom: 90, // Reserve space for absolutely positioned input
-  },
-  messageRow: {
-    paddingVertical: 8,
-  },
-  messageText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  inputRow: {
-    height: 80, // Increased height for visibility
-    flexDirection: 'row',
-    paddingHorizontal: 15,
-    paddingVertical: 15,
-    borderTopWidth: 3, // Thicker border to make it obvious
-    borderTopColor: '#4287f5', // Blue border to make it obvious
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa', // Light background to make it stand out
-    position: 'absolute', // Force it to bottom
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  messageInput: {
-    flex: 1,
-    height: 50,
-    borderWidth: 3, // Thick border to make it obvious
-    borderColor: '#4287f5',
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    marginRight: 10,
-    backgroundColor: '#fff',
-    fontSize: 16,
-  },
-  sendButton: {
-    height: 50,
-    backgroundColor: '#4287f5',
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    flex: 1, // This ensures the chat takes remaining space
   },
   emptyStateContainer: {
     flex: 1,

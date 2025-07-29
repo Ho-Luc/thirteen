@@ -63,8 +63,8 @@ const WeekHeader: React.FC<WeekHeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 0, // No top padding at all
-    paddingBottom: 2, // Minimal bottom padding
+    paddingTop: 0, // No top padding
+    paddingBottom: 0, // No bottom padding
     paddingHorizontal: 20,
     backgroundColor: '#fff',
     alignItems: 'center',
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   currentDate: {
     fontSize: 16,
     color: '#4287f5',
-    marginBottom: 4, // Very minimal margin
+    marginBottom: 4, // Reduced margin between date and circles
     textAlign: 'center',
   },
   dayHeadersRow: {
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 2, // Reduced from 4 to 2 for very tight spacing
     position: 'relative',
     overflow: 'hidden',
   },

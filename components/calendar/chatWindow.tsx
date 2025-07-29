@@ -92,7 +92,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <Text style={styles.chatTitle}>{groupName} Chat</Text>
       </View>
       
-      {/* Messages */}
+      {/* Messages - FIXED TO RESERVE SPACE FOR INPUT */}
       <ScrollView 
         ref={scrollViewRef}
         style={styles.messagesContainer}
@@ -109,7 +109,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         )}
       </ScrollView>
       
-      {/* Input Field - Simple approach */}
+      {/* Input Field - ALWAYS VISIBLE AT BOTTOM */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.messageInput}
@@ -119,6 +119,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           returnKeyType="send"
           onSubmitEditing={handleSendMessage}
           editable={!isLoading}
+          multiline={false}
         />
         <TouchableOpacity 
           style={[
@@ -163,13 +164,14 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     paddingVertical: 10,
-    paddingBottom: 20,
+    paddingBottom: 20, // Extra padding at bottom for better spacing
+    flexGrow: 1,
   },
   emptyChat: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 20,
   },
   emptyChatText: {
     fontSize: 16,
@@ -228,11 +230,12 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     paddingHorizontal: 15,
-    paddingVertical: 15,
+    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
     backgroundColor: '#fff',
     alignItems: 'center',
+    minHeight: 60, // Ensure minimum height for input area
   },
   messageInput: {
     flex: 1,
@@ -240,20 +243,21 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     borderRadius: 25,
     paddingHorizontal: 15,
-    paddingVertical: 12,
+    paddingVertical: 10,
     marginRight: 10,
     fontSize: 16,
     backgroundColor: '#fff',
-    minHeight: 45,
+    maxHeight: 100, // Prevent input from getting too tall
   },
   sendButton: {
     backgroundColor: '#4287f5',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 25,
-    minHeight: 45,
+    minHeight: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    minWidth: 60,
   },
   sendButtonDisabled: {
     backgroundColor: '#cccccc',
