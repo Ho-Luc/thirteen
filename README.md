@@ -36,3 +36,5 @@ You are a Principal Software Engineer with many years of industry knowledge. Som
 ## Todos
 
 1. Tests
+2. Add a small clickable banner to the bottom of app/index.tsx. When a user clicks on the banner, a modal pops up With some lines of text, followed by this bible quote. 2 Corinthians 9:6 "...whoever sows generously will also reap generously. Each of you should give what you have decided in your heat to give, not reluctantly or under compulsion, for God loves a cheerful giver" The modal also has a couple buttons to click on, at the bottom(Stripe, Paypal).
+3. When a user creates user profile for the FIRST time, a close-able modal opens up with the following information. "Welcome to Thirteen, an app where followers of Jesus can create/join daily bible reading groups. The goal is that, through community, we all encourage each other to build up a daily habit of sitting with God's word. Make sure to keep the streak and make the day green and mark off on the calendar, whether you did the reading"
