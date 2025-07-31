@@ -31,12 +31,6 @@ class ImageCompressionService {
       
       // Get original image info
       const imageInfo = await FileSystem.getInfoAsync(imageUri);
-      
-      if (imageInfo.exists && 'size' in imageInfo) {
-        console.log('Original image size:', (imageInfo.size / 1024).toFixed(2) + ' KB');
-      } else {
-        console.log('Could not get original image size');
-      }
 
       // Resize and compress the image
       const manipulatedImage = await ImageManipulator.manipulateAsync(
@@ -61,9 +55,7 @@ class ImageCompressionService {
       // Get compressed image info
       const compressedInfo = await FileSystem.getInfoAsync(manipulatedImage.uri);
       
-      if (compressedInfo.exists && 'size' in compressedInfo) {
-        console.log('Compressed image size:', (compressedInfo.size / 1024).toFixed(2) + ' KB');
-        
+      if (compressedInfo.exists && 'size' in compressedInfo) {        
         // Calculate compression ratio if both sizes are available
         if (imageInfo.exists && 'size' in imageInfo) {
           const compressionRatio = ((imageInfo.size - compressedInfo.size) / imageInfo.size * 100).toFixed(1);
