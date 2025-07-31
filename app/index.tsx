@@ -1,4 +1,4 @@
-// app/index.tsx - Updated with Welcome Modal for first-time users
+// app/index.tsx - Updated with complete donation flow
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -12,6 +12,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UserProfileCreator, { UserProfile } from '../components/user/userProfileCreator';
 import WelcomeModal from '../components/user/welcomeModal';
+import DonationBanner from '../components/donations/donationBanner';
+import DonationModal from '../components/donations/donationModal';
 import Bible from '../assets/images/bible.png';
 
 const HomeScreen = () => {
@@ -19,6 +21,7 @@ const HomeScreen = () => {
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showDonationModal, setShowDonationModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -72,6 +75,11 @@ const HomeScreen = () => {
   const handleProfileUpdated = (profile: UserProfile) => {
     saveUserProfile(profile);
     setShowEditProfile(false);
+  };
+
+  // Handle donation banner press
+  const handleDonationBannerPress = () => {
+    setShowDonationModal(true);
   };
 
   if (isLoading) {
@@ -131,6 +139,9 @@ const HomeScreen = () => {
         </>
       )}
 
+      {/* Donation Banner - Always visible at bottom */}
+      <DonationBanner onPress={handleDonationBannerPress} />
+
       {/* Welcome Modal for First-Time Users */}
       <WelcomeModal
         visible={showWelcomeModal}
@@ -155,6 +166,12 @@ const HomeScreen = () => {
         isEditing={true}
         existingProfile={userProfile || undefined}
       />
+
+      {/* Donation Modal */}
+      <DonationModal
+        visible={showDonationModal}
+        onClose={() => setShowDonationModal(false)}
+      />
     </View>
   );
 };
@@ -166,6 +183,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#fff',
+    paddingBottom: 100, // Extra space for donation banner
   },
   image: {
     width: 100,
