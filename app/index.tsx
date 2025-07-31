@@ -1,4 +1,4 @@
-// app/index.tsx - Cleaned for production (TODO #5)
+// app/index.tsx - Updated with Welcome Modal for first-time users
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -11,12 +11,14 @@ import {
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UserProfileCreator, { UserProfile } from '../components/user/userProfileCreator';
+import WelcomeModal from '../components/user/welcomeModal';
 import Bible from '../assets/images/bible.png';
 
 const HomeScreen = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -49,9 +51,21 @@ const HomeScreen = () => {
   };
 
   // Handle profile creation
-  const handleProfileCreated = (profile: UserProfile) => {
-    saveUserProfile(profile);
-    setShowCreateProfile(false);
+  const handleProfileCreated = async (profile: UserProfile) => {
+    try {
+      await saveUserProfile(profile);
+      setShowCreateProfile(false);
+      
+      // Check if this is truly the first time (no previous profile stored)
+      const hasSeenWelcome = await AsyncStorage.getItem('hasSeenWelcome');
+      if (!hasSeenWelcome) {
+        // Mark that they've seen the welcome and show it
+        await AsyncStorage.setItem('hasSeenWelcome', 'true');
+        setShowWelcomeModal(true);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    }
   };
 
   // Handle profile update
@@ -116,6 +130,12 @@ const HomeScreen = () => {
           </TouchableOpacity>
         </>
       )}
+
+      {/* Welcome Modal for First-Time Users */}
+      <WelcomeModal
+        visible={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
+      />
 
       {/* Create Profile Modal */}
       <UserProfileCreator
