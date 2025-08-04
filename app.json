@@ -8,14 +8,28 @@
     "scheme": "thirteen",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.holucdev.thirteen",
-      "buildNumber": "1"
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Thirteen needs access to your photo library so you can select and upload a profile picture to share with your Bible reading group members.",
+        "NSCameraUsageDescription": "Thirteen needs access to your camera so you can take a photo to use as your profile picture for your Bible reading groups.",
+        "NSPhotoLibraryAddUsageDescription": "Thirteen needs permission to save photos to your photo library when you want to save images shared in your Bible reading groups."
+      }
     },
     "android": {
       "edgeToEdgeEnabled": true,
-      "package": "com.holucdev.thirteen"
+      "package": "com.holucdev.thirteen",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -26,6 +40,13 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Thirteen needs access to your photo library to let you select a profile picture for your Bible reading groups.",
+          "cameraPermission": "Thirteen needs access to your camera to let you take a profile picture for your Bible reading groups."
         }
       ]
     ],
