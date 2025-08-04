@@ -3,6 +3,7 @@ import {
   View,
   Text,
   Modal,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -47,7 +48,7 @@ const DonationModal: React.FC<DonationModalProps> = ({
       // Show thank you message
       Alert.alert(
         'Thank You! 🙏',
-        `You're being redirected to Venmo to complete your $${amount} donation. God bless your generosity!`,
+        `You're being redirected to Venmo to complete your donation. God bless your generosity!`,
         [
           {
             text: 'OK',
@@ -169,15 +170,14 @@ const DonationModal: React.FC<DonationModalProps> = ({
               {/* Venmo Info */}
               <View style={styles.paymentInfo}>
                 <View style={styles.venmoLogoContainer}>
-                  <Text style={styles.venmoLogo}>venmo</Text>
+                  <Image 
+                    source={require('../../assets/images/venmo-icon.png')} 
+                  />
+                </View>
                 </View>
                 <Text style={styles.paymentInfoText}>
                   You'll be redirected to Venmo to complete your donation
                 </Text>
-                <Text style={styles.paymentInfoSubtext}>
-                  Amount will be pre-filled for easy donation
-                </Text>
-              </View>
 
               {/* Alternative Venmo Link */}
               <TouchableOpacity
@@ -336,7 +336,6 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   venmoLogoContainer: {
-    backgroundColor: '#3D95CE',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 6,

@@ -9,7 +9,9 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.holucdev.thirteen",
+      "buildNumber": "1"
     },
     "android": {
       "edgeToEdgeEnabled": true,
