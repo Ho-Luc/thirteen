@@ -20,14 +20,12 @@ const DonationBanner: React.FC<DonationBannerProps> = ({ onPress }) => {
     >
       <View style={styles.bannerContent}>
         <View style={styles.textContainer}>
-          <Text style={styles.bannerTitle}>Support Thirteen 🙏</Text>
+          <Text style={styles.bannerTitle}>Support Thirteen</Text>
           <Text style={styles.bannerSubtitle}>
             Help keep this Bible reading community alive
           </Text>
         </View>
-        <View style={styles.heartContainer}>
-          <Text style={styles.heartIcon}>💝</Text>
-        </View>
+
       </View>
     </TouchableOpacity>
   );
@@ -72,12 +70,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#d4edda',
     lineHeight: 18,
-  },
-  heartContainer: {
-    marginLeft: 15,
-  },
-  heartIcon: {
-    fontSize: 24,
   },
 });
 
