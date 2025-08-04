@@ -1,4 +1,3 @@
-// components/donations/donationModal.tsx - Complete implementation
 import React, { useState } from 'react';
 import {
   View,
@@ -7,9 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Platform,
+  Linking,
 } from 'react-native';
-import { useStripe } from '@stripe/stripe-react-native';
 
 interface DonationModalProps {
   visible: boolean;
@@ -21,100 +19,63 @@ const DonationModal: React.FC<DonationModalProps> = ({
   onClose,
 }) => {
   const [showAmountSelection, setShowAmountSelection] = useState(false);
-  const [loading, setLoading] = useState(false);
-  
-  const { 
-    confirmPayment,
-    isApplePaySupported,
-    isGooglePaySupported,
-  } = useStripe();
 
-  // Create payment intent on your backend
-  const createPaymentIntent = async (amount: number) => {
+  // Open Venmo with pre-populated amount
+  const openVenmo = async (amount: number) => {
     try {
-      // TODO: Replace with Vercel backend endpoint
-      const response = await fetch('https://your-backend.com/create-payment-intent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: amount * 100, // Convert to cents
-          currency: 'usd',
-          automatic_payment_methods: {
-            enabled: true,
-          },
-        }),
-      });
+      // Venmo deep link format: venmo://paycharge?txn=pay&recipients=USERNAME&amount=AMOUNT&note=MESSAGE
+      const venmoUsername = 'Thirteen-App';
+      const note = encodeURIComponent(`Donation to support Thirteen Bible App - Thank you! 🙏`);
       
-      const { client_secret } = await response.json();
-      return client_secret;
-    } catch (error) {
-      throw new Error('Failed to create payment intent');
-    }
-  };
+      // Try Venmo app first
+      const venmoAppUrl = `venmo://paycharge?txn=pay&recipients=${venmoUsername}&amount=${amount}&note=${note}`;
+      
+      // Fallback to web version
+      const venmoWebUrl = `https://venmo.com/u/${venmoUsername}?txn=pay&amount=${amount}&note=${note}`;
 
-  // Handle Express Payment (Apple Pay / Google Pay)
-  const handleExpressPayment = async (amount: number) => {
-    try {
-      setLoading(true);
-
-      // Check if express payment is supported
-      const isSupported = Platform.OS === 'ios' 
-        ? await isApplePaySupported()
-        : await isGooglePaySupported();
-
-      if (!isSupported) {
-        Alert.alert(
-          'Not Supported',
-          `${Platform.OS === 'ios' ? 'Apple Pay' : 'Google Pay'} is not available on this device.`
-        );
-        return;
-      }
-
-      // Create payment intent
-      const clientSecret = await createPaymentIntent(amount);
-
-      // Confirm payment with Apple Pay / Google Pay
-      const { error } = await confirmPayment(clientSecret, {
-        paymentMethodType: Platform.OS === 'ios' ? 'ApplePay' : 'GooglePay',
-        paymentMethodData: {
-          presentationStyle: 'automatic',
-          merchantDisplayName: 'Thirteen Bible App',
-          cartItems: [
-            {
-              label: 'Donation to Support Thirteen',
-              amount: amount.toFixed(2),
-              paymentType: 'immediate',
-            },
-          ],
-          requiredBillingContactFields: ['emailAddress'],
-          requiredShippingContactFields: [],
-        },
-      });
-
-      if (error) {
-        Alert.alert('Payment Failed', error.message);
+      // Check if Venmo app is installed
+      const canOpenApp = await Linking.canOpenURL(venmoAppUrl);
+      
+      if (canOpenApp) {
+        // Open Venmo app
+        await Linking.openURL(venmoAppUrl);
       } else {
-        // Success!
-        Alert.alert(
-          'Thank You! 🙏',
-          `Your $${amount} donation was successful. God bless you for your generosity!`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setShowAmountSelection(false);
-                onClose();
-              },
-            },
-          ]
-        );
+        // Open in browser
+        await Linking.openURL(venmoWebUrl);
       }
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to process payment. Please try again.');
-    } finally {
-      setLoading(false);
+
+      // Show thank you message
+      Alert.alert(
+        'Thank You! 🙏',
+        `You're being redirected to Venmo to complete your $${amount} donation. God bless your generosity!`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowAmountSelection(false);
+              onClose();
+            },
+          },
+        ]
+      );
+
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Unable to open Venmo. Please make sure you have the Venmo app installed or try again later.',
+        [
+          {
+            text: 'Try Web Version',
+            onPress: () => {
+              Linking.openURL(`https://venmo.com/u/Thirteen-App`);
+            },
+          },
+          {
+            text: 'OK',
+            style: 'cancel',
+          },
+        ]
+      );
     }
   };
 
@@ -196,12 +157,8 @@ const DonationModal: React.FC<DonationModalProps> = ({
                 {donationAmounts.map((amount) => (
                   <TouchableOpacity
                     key={amount}
-                    style={[
-                      styles.amountButton,
-                      loading && styles.disabledButton
-                    ]}
-                    onPress={() => handleExpressPayment(amount)}
-                    disabled={loading}
+                    style={styles.amountButton}
+                    onPress={() => openVenmo(amount)}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.amountText}>${amount}</Text>
@@ -209,28 +166,34 @@ const DonationModal: React.FC<DonationModalProps> = ({
                 ))}
               </View>
 
-              {/* Express Payment Info */}
+              {/* Venmo Info */}
               <View style={styles.paymentInfo}>
+                <View style={styles.venmoLogoContainer}>
+                  <Text style={styles.venmoLogo}>venmo</Text>
+                </View>
                 <Text style={styles.paymentInfoText}>
-                  Payment will be processed with{' '}
-                  {Platform.OS === 'ios' ? 'Apple Pay' : 'Google Pay'}
+                  You'll be redirected to Venmo to complete your donation
                 </Text>
                 <Text style={styles.paymentInfoSubtext}>
-                  {Platform.OS === 'ios' ? 'Touch ID' : 'Fingerprint'} or Face ID authentication
+                  Amount will be pre-filled for easy donation
                 </Text>
               </View>
 
-              {loading && (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Processing payment...</Text>
-                </View>
-              )}
+              {/* Alternative Venmo Link */}
+              <TouchableOpacity
+                style={styles.alternativeButton}
+                onPress={() => Linking.openURL('https://venmo.com/u/Thirteen-App')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.alternativeButtonText}>
+                  Or visit @Thirteen-App on Venmo
+                </Text>
+              </TouchableOpacity>
 
               {/* Back Button */}
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => setShowAmountSelection(false)}
-                disabled={loading}
                 activeOpacity={0.8}
               >
                 <Text style={styles.backButtonText}>← Back</Text>
@@ -353,11 +316,11 @@ const styles = StyleSheet.create({
   },
   amountButton: {
     flex: 1,
-    backgroundColor: '#4287f5',
+    backgroundColor: '#3D95CE', // Venmo blue color
     paddingVertical: 20,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#4287f5',
+    shadowColor: '#3D95CE',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -368,14 +331,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
-  disabledButton: {
-    backgroundColor: '#cccccc',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
   paymentInfo: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 15,
+  },
+  venmoLogoContainer: {
+    backgroundColor: '#3D95CE',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  venmoLogo: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
   paymentInfoText: {
     fontSize: 14,
@@ -388,13 +359,16 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  loadingContainer: {
-    paddingVertical: 10,
+  alternativeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    marginBottom: 15,
   },
-  loadingText: {
+  alternativeButtonText: {
     fontSize: 14,
-    color: '#666',
+    color: '#3D95CE',
     textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   backButton: {
     paddingVertical: 10,
