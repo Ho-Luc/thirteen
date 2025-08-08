@@ -41,81 +41,102 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
   const streak = getUserStreak(member.userId);
 
   return (
-    <View style={styles.userRow}>
-      {/* Avatar */}
-      <TouchableOpacity
-        style={styles.avatarContainer}
-        onPress={onAvatarPress}
-        disabled={!isCurrentUser}
-        activeOpacity={isCurrentUser ? 0.7 : 1}
-      >
-        {member.avatarUrl ? (
-          <Image 
-            source={{ uri: member.avatarUrl }} 
-            style={styles.avatar}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.defaultAvatar}>
-            <Text style={styles.defaultAvatarText}>👤</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Streak Counter */}
-      <View style={styles.streakContainer}>
-        <Text style={styles.streakNumber}>{streak}</Text>
-        <Text style={styles.streakEmoji}>🔥</Text>
-      </View>
-
-      {/* Calendar Squares */}
-      <View style={styles.calendarRow}>
-        {currentWeek.map((date, index) => {
-          const entry = getUserEntry(member.userId, date);
-          const isCompleted = entry?.completed || false;
-          
-          return (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.calendarSquare,
-                isCompleted ? styles.completedSquare : styles.incompleteSquare,
-                !isCurrentUser && styles.disabledSquare
-              ]}
-              onPress={() => onToggleDay(member.userId, date)}
-              disabled={!isCurrentUser}
-              activeOpacity={isCurrentUser ? 0.7 : 1}
+    <View style={styles.containerWrapper}>
+      {/* User Name */}
+      <Text style={[styles.userName, isCurrentUser && styles.currentUserName]}>
+        {member.userName}{isCurrentUser ? ' (You)' : ''}
+      </Text>
+      
+      <View style={styles.userRow}>
+        {/* Avatar */}
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          onPress={onAvatarPress}
+          disabled={!isCurrentUser}
+          activeOpacity={isCurrentUser ? 0.7 : 1}
+        >
+          {member.avatarUrl ? (
+            <Image 
+              source={{ uri: member.avatarUrl }} 
+              style={styles.avatar}
+              resizeMode="cover"
             />
-          );
-        })}
+          ) : (
+            <View style={styles.defaultAvatar}>
+              <Text style={styles.defaultAvatarText}>👤</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Streak Counter */}
+        <View style={styles.streakContainer}>
+          <Text style={styles.streakNumber}>{streak}</Text>
+          <Text style={styles.streakEmoji}>🔥</Text>
+        </View>
+
+        {/* Calendar Squares */}
+        <View style={styles.calendarRow}>
+          {currentWeek.map((date, index) => {
+            const entry = getUserEntry(member.userId, date);
+            const isCompleted = entry?.completed || false;
+            
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.calendarSquare,
+                  isCompleted ? styles.completedSquare : styles.incompleteSquare,
+                  !isCurrentUser && styles.disabledSquare
+                ]}
+                onPress={() => onToggleDay(member.userId, date)}
+                disabled={!isCurrentUser}
+                activeOpacity={isCurrentUser ? 0.7 : 1}
+              />
+            );
+          })}
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  containerWrapper: {
+    marginBottom: 5,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+    marginLeft: 8,
+  },
+  currentUserName: {
+    color: '#4287f5',
+    fontWeight: 'bold',
+  },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 8, // Reduced from 15 to 8 for less left spacing
-    paddingRight: 40, // Increased from 30 to 40 for more right spacing
+    paddingHorizontal: 8,
+    paddingRight: 40,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   avatarContainer: {
-    marginRight: 12, // Reduced from 15 to 12
+    marginRight: 12,
   },
   avatar: {
-    width: 60,
-    height: 60,
+    width: 55,
+    height: 55,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#4287f5',
   },
   defaultAvatar: {
-    width: 60,
-    height: 60,
+    width: 55,
+    height: 55,
     borderRadius: 30,
     backgroundColor: '#e9ecef',
     justifyContent: 'center',
@@ -130,8 +151,8 @@ const styles = StyleSheet.create({
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 45, // Reduced from 50 to 45
-    marginRight: 8, // Reduced from 10 to 8
+    width: 45,
+    marginRight: 8,
   },
   streakNumber: {
     fontSize: 16,
@@ -146,7 +167,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingRight: 20, // Increased from 15 to 20 for more space on right
+    paddingRight: 20,
   },
   calendarSquare: {
     width: 35,

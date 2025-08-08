@@ -250,36 +250,34 @@ class CalendarService {
       return { currentStreak: 0, lastActiveDate: '' };
     }
 
-    const sortedEntries = userEntries.sort((a, b) => b.date.localeCompare(a.date));
+    // Get today's date in YYYY-MM-DD format
     const today = new Date();
     const todayString = today.toISOString().split('T')[0];
+    
+    // Create a Set of completed dates for fast lookup
+    const completedDates = new Set(userEntries.map(entry => entry.date));
     
     let currentStreak = 0;
     let checkDate = new Date(today);
     
+    // Start counting from today and go backwards
     for (let i = 0; i < 365; i++) {
       const dateString = checkDate.toISOString().split('T')[0];
-      const hasEntryForDate = sortedEntries.some(entry => entry.date === dateString);
       
-      if (hasEntryForDate) {
+      if (completedDates.has(dateString)) {
         currentStreak++;
       } else {
-        if (currentStreak > 0) {
-          break;
-        }
-        if (dateString === todayString) {
-          // Continue to check yesterday
-        } else {
-          break;
-        }
+        // Found a gap - stop counting
+        break;
       }
       
+      // Move to previous day
       checkDate.setDate(checkDate.getDate() - 1);
     }
 
     return {
       currentStreak,
-      lastActiveDate: sortedEntries[0]?.date || '',
+      lastActiveDate: userEntries.length > 0 ? userEntries.sort((a, b) => b.date.localeCompare(a.date))[0].date : '',
     };
   }
 
