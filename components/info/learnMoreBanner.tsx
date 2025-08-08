@@ -1,4 +1,4 @@
-// components/donations/donationBanner.tsx
+// components/info/learnMoreBanner.tsx
 import React from 'react';
 import {
   View,
@@ -7,11 +7,11 @@ import {
   StyleSheet,
 } from 'react-native';
 
-interface DonationBannerProps {
+interface LearnMoreBannerProps {
   onPress: () => void;
 }
 
-const DonationBanner: React.FC<DonationBannerProps> = ({ onPress }) => {
+const LearnMoreBanner: React.FC<LearnMoreBannerProps> = ({ onPress }) => {
   return (
     <TouchableOpacity
       style={styles.bannerContainer}
@@ -20,12 +20,12 @@ const DonationBanner: React.FC<DonationBannerProps> = ({ onPress }) => {
     >
       <View style={styles.bannerContent}>
         <View style={styles.textContainer}>
-          <Text style={styles.bannerTitle}>Support Thirteen</Text>
+          <Text style={styles.bannerTitle}>Learn More About Thirteen</Text>
           <Text style={styles.bannerSubtitle}>
-            Help keep this Bible reading community alive
+            Discover the heart behind this Bible reading community
           </Text>
         </View>
-
+        <Text style={styles.arrow}>→</Text>
       </View>
     </TouchableOpacity>
   );
@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     bottom: 20,
     left: 20,
     right: 20,
-    backgroundColor: '#28a745',
+    backgroundColor: '#4287f5',
     borderRadius: 12,
     paddingVertical: 15,
     paddingHorizontal: 20,
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 6,
     borderWidth: 1,
-    borderColor: '#1e7e34',
+    borderColor: '#2563eb',
   },
   bannerContent: {
     flexDirection: 'row',
@@ -68,9 +68,15 @@ const styles = StyleSheet.create({
   },
   bannerSubtitle: {
     fontSize: 14,
-    color: '#d4edda',
+    color: '#dbeafe',
     lineHeight: 18,
+  },
+  arrow: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
 });
 
-export default DonationBanner;
+export default LearnMoreBanner;

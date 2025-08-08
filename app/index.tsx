@@ -1,4 +1,4 @@
-// app/index.tsx - Updated with complete donation flow
+// app/index.tsx - Updated without donation functionality
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -12,8 +12,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UserProfileCreator, { UserProfile } from '../components/user/userProfileCreator';
 import WelcomeModal from '../components/user/welcomeModal';
-import DonationBanner from '../components/donations/donationBanner';
-import DonationModal from '../components/donations/donationModal';
+import LearnMoreBanner from '../components/info/learnMoreBanner';
+import LearnMoreModal from '../components/info/learnMoreModal';
 import Bible from '../assets/images/bible.png';
 
 const HomeScreen = () => {
@@ -21,7 +21,7 @@ const HomeScreen = () => {
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [showLearnMoreModal, setShowLearnMoreModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -77,9 +77,9 @@ const HomeScreen = () => {
     setShowEditProfile(false);
   };
 
-  // Handle donation banner press
-  const handleDonationBannerPress = () => {
-    setShowDonationModal(true);
+  // Handle learn more banner press
+  const handleLearnMoreBannerPress = () => {
+    setShowLearnMoreModal(true);
   };
 
   if (isLoading) {
@@ -139,8 +139,8 @@ const HomeScreen = () => {
         </>
       )}
 
-      {/* Donation Banner - Always visible at bottom */}
-      <DonationBanner onPress={handleDonationBannerPress} />
+      {/* Learn More Banner - Always visible at bottom */}
+      <LearnMoreBanner onPress={handleLearnMoreBannerPress} />
 
       {/* Welcome Modal for First-Time Users */}
       <WelcomeModal
@@ -167,10 +167,10 @@ const HomeScreen = () => {
         existingProfile={userProfile || undefined}
       />
 
-      {/* Donation Modal */}
-      <DonationModal
-        visible={showDonationModal}
-        onClose={() => setShowDonationModal(false)}
+      {/* Learn More Modal */}
+      <LearnMoreModal
+        visible={showLearnMoreModal}
+        onClose={() => setShowLearnMoreModal(false)}
       />
     </View>
   );
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#fff',
-    paddingBottom: 100, // Extra space for donation banner
+    paddingBottom: 100, // Extra space for learn more banner
   },
   image: {
     width: 100,
