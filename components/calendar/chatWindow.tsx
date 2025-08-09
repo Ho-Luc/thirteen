@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 
 interface ChatMessage {
@@ -32,7 +35,29 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   groupName = 'Group',
 }) => {
   const [newMessage, setNewMessage] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => {
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener?.remove();
+      keyboardWillHideListener?.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -40,7 +65,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }
-  }, [messages]);
+  }, [messages, keyboardHeight]);
 
   const handleSendMessage = () => {
     const trimmedMessage = newMessage.trim();
@@ -86,7 +111,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
       {/* Chat Header */}
       <View style={styles.chatHeader}>
         <Text style={styles.chatTitle}>{groupName} chat</Text>
@@ -96,8 +125,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       <ScrollView 
         ref={scrollViewRef}
         style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
+        contentContainerStyle={[
+          styles.messagesContent,
+          { paddingBottom: keyboardHeight > 0 ? 20 : 20 }
+        ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {messages.length === 0 ? (
           <View style={styles.emptyChat}>
@@ -110,7 +143,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       </ScrollView>
       
       {/* Input Field - ALWAYS VISIBLE AT BOTTOM */}
-      <View style={styles.inputContainer}>
+      <View style={[
+        styles.inputContainer,
+        Platform.OS === 'android' && keyboardHeight > 0 && {
+          marginBottom: keyboardHeight - 20
+        }
+      ]}>
         <TextInput
           style={styles.messageInput}
           placeholder="Send a message"
@@ -120,6 +158,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           onSubmitEditing={handleSendMessage}
           editable={!isLoading}
           multiline={false}
+          blurOnSubmit={false}
         />
         <TouchableOpacity 
           style={[
@@ -137,7 +176,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -164,7 +203,7 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     paddingVertical: 10,
-    paddingBottom: 20, // Extra padding at bottom for better spacing
+    paddingBottom: 20,
     flexGrow: 1,
   },
   emptyChat: {
@@ -235,7 +274,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#f0f0f0',
     backgroundColor: '#fff',
     alignItems: 'center',
-    minHeight: 60, // Ensure minimum height for input area
+    minHeight: 60,
   },
   messageInput: {
     flex: 1,
@@ -247,7 +286,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
     fontSize: 16,
     backgroundColor: '#fff',
-    maxHeight: 100, // Prevent input from getting too tall
+    maxHeight: 100,
   },
   sendButton: {
     backgroundColor: '#4287f5',

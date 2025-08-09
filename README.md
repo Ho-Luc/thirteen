@@ -35,5 +35,4 @@ You are a Principal Software Engineer with many years of industry knowledge. Som
 
 ## Todos
 
-1. Tests
-2. Add a small clickable banner to the bottom of app/index.tsx. When a user clicks on the banner, a modal pops up with "Hi, my name is Luc, I'm a child of God and recently unemployed engineer. With my newfound time, I've dedicated my time to recreating the beloved Twelve App my bible study used, to track bible readings. Any donations are appreciated and will be used to keep the servers running. Any excess donations will be made to local churchs.", followed by this bible quote. 2 Corinthians 9:6 "...whoever sows generously will also reap generously. Each of you should give what you have decided in your heat to give, not reluctantly or under compulsion, for God loves a cheerful giver" The modal also has a button to click on, at the bottom "Donate". After clicking the Donate button another modal pops up with three preset amounts to choose from, $2 , $5 , $10 followed by the Stripe payment button below. The payment will be handled by google pay or apple pay in the background, with face/finger authentication. 
+1. Add more tests

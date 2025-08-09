@@ -5,8 +5,6 @@ import {
   StyleSheet, 
   ScrollView, 
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,6 +16,7 @@ import UserAvatarPicker from '../../components/calendar/userAvatarPicker';
 import WeekHeader from '../../components/calendar/weekHeader';
 import UserCalendarRow from '../../components/calendar/userCalendarRow';
 import ChatWindow from '../../components/calendar/chatWindow';
+import MonthlyCalendarModal from '../../components/calendar/monthlyCalendarModal';
 
 interface GroupMember {
   id: string;
@@ -64,7 +63,9 @@ const GroupCalendar = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [showMonthlyCalendar, setShowMonthlyCalendar] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
+  const [allUserEntries, setAllUserEntries] = useState<CalendarEntry[]>([]);
 
   // Get screen dimensions and calculate layout proportions
   const screenHeight = Dimensions.get('window').height;
@@ -175,8 +176,35 @@ const GroupCalendar = () => {
     try {
       const entries = await calendarService.getCalendarEntries(params.groupId, currentWeek);
       setCalendarEntries(entries);
+      
+      // Load all entries for the current user for monthly view
+      await loadAllUserEntries();
     } catch (error) {
       // Handle error silently
+    }
+  };
+
+  const loadAllUserEntries = async () => {
+    try {
+      // Get entries for the entire year to show in monthly calendar
+      const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+      const endOfYear = new Date(new Date().getFullYear(), 11, 31);
+      
+      // Create a fake week array spanning the whole year
+      const yearDates = [];
+      const currentDate = new Date(startOfYear);
+      while (currentDate <= endOfYear) {
+        yearDates.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      const allEntries = await calendarService.getCalendarEntries(params.groupId, yearDates);
+      
+      // Filter to only current user's entries
+      const userEntries = allEntries.filter(entry => entry.userId === currentUserId);
+      setAllUserEntries(userEntries);
+    } catch (error) {
+      console.error('Error loading all user entries:', error);
     }
   };
 
@@ -330,7 +358,7 @@ const GroupCalendar = () => {
         isCurrentUser={isCurrentUser}
         onAvatarPress={() => {
           if (isCurrentUser) {
-            setShowAvatarPicker(true);
+            setShowMonthlyCalendar(true);
           }
         }}
       />
@@ -350,10 +378,7 @@ const GroupCalendar = () => {
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       {/* Week Header - 10% of screen */}
       <View style={[styles.weekHeaderContainer, { height: headerHeight }]}>
         <WeekHeader
@@ -397,6 +422,17 @@ const GroupCalendar = () => {
         />
       </View>
 
+      {/* Monthly Calendar Modal */}
+      {showMonthlyCalendar && (
+        <MonthlyCalendarModal
+          visible={showMonthlyCalendar}
+          onClose={() => setShowMonthlyCalendar(false)}
+          userEntries={allUserEntries}
+          userName={currentUserName}
+          currentStreak={getUserStreak(currentUserId)}
+        />
+      )}
+
       {/* Avatar Picker Modal */}
       {showAvatarPicker && (
         <UserAvatarPicker
@@ -406,7 +442,7 @@ const GroupCalendar = () => {
           currentAvatarUrl={getCurrentUserMember()?.avatarUrl}
         />
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
