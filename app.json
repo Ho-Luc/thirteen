@@ -3,6 +3,7 @@
     "name": "thirteen",
     "slug": "thirteen",
     "version": "1.0.0",
+    "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "thirteen",
@@ -27,9 +28,10 @@
       "package": "com.holucdev.thirteen",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE", 
         "android.permission.WRITE_EXTERNAL_STORAGE"
-      ]
+      ],
+      "privacyPolicy": "https://thirteen-landing-page.vercel.app/"
     },
     "plugins": [
       "expo-router",
