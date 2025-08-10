@@ -26,7 +26,7 @@ interface UserCalendarRowProps {
   getUserStreak: (userId: string) => number;
   onToggleDay: (userId: string, date: Date) => void;
   isCurrentUser: boolean;
-  onAvatarPress: () => void;
+  onAvatarPress: () => void; // This will now open monthly calendar for current user
 }
 
 const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
@@ -64,6 +64,12 @@ const UserCalendarRow: React.FC<UserCalendarRowProps> = ({
           ) : (
             <View style={styles.defaultAvatar}>
               <Text style={styles.defaultAvatarText}>👤</Text>
+            </View>
+          )}
+          {/* Add visual indicator that avatar is tappable for current user */}
+          {isCurrentUser && (
+            <View style={styles.avatarIndicator}>
+              <Text style={styles.avatarIndicatorText}>📅</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -108,7 +114,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 8,
     marginLeft: 8,
   },
   currentUserName: {
@@ -126,17 +132,18 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginRight: 12,
+    position: 'relative',
   },
   avatar: {
-    width: 55,
-    height: 55,
+    width: 60,
+    height: 60,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#4287f5',
   },
   defaultAvatar: {
-    width: 55,
-    height: 55,
+    width: 60,
+    height: 60,
     borderRadius: 30,
     backgroundColor: '#e9ecef',
     justifyContent: 'center',
@@ -147,6 +154,22 @@ const styles = StyleSheet.create({
   defaultAvatarText: {
     fontSize: 24,
     color: '#6c757d',
+  },
+  avatarIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#4287f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  avatarIndicatorText: {
+    fontSize: 10,
   },
   streakContainer: {
     flexDirection: 'row',

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "thirteen",
+    "name": "Thirteen",
     "slug": "thirteen",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,6 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.holucdev.thirteen",
+      "buildNumber": "2",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Thirteen needs access to your photo library to let you select a profile picture for your Bible reading groups.",
         "NSCameraUsageDescription": "Thirteen needs access to your camera to let you take a profile picture for your Bible reading groups.",
@@ -31,7 +32,8 @@
         "android.permission.READ_EXTERNAL_STORAGE", 
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "privacyPolicy": "https://thirteen-landing-page.vercel.app/"
+      "privacyPolicy": "https://thirteen-landing-page.vercel.app/",
+      "versionCode": 2
     },
     "plugins": [
       "expo-router",
