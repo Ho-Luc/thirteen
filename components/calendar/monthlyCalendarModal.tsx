@@ -1,3 +1,4 @@
+// components/calendar/monthlyCalendarModal.tsx - Optimized production version
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -24,6 +25,8 @@ interface MonthlyCalendarModalProps {
   userEntries: CalendarEntry[];
   userName: string;
   currentStreak: number;
+  longestStreak?: number;
+  onMonthChange?: (year: number, month: number) => void;
 }
 
 const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
@@ -32,6 +35,8 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
   userEntries,
   userName,
   currentStreak,
+  longestStreak = 0,
+  onMonthChange,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<Array<Date | null>>([]);
@@ -51,23 +56,18 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     
-    // Get first day of the month
     const firstDay = new Date(year, month, 1);
     const startingDayOfWeek = firstDay.getDay();
     
-    // Get last day of the month
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
     
-    // Create calendar grid
     const days: Array<Date | null> = [];
     
-    // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
     
-    // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(new Date(year, month, day));
     }
@@ -75,8 +75,16 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
     setCalendarDays(days);
   };
 
+  // Consistent date formatting
+  const formatDateConsistently = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const isDateCompleted = (date: Date): boolean => {
-    const dateString = date.toISOString().split('T')[0];
+    const dateString = formatDateConsistently(date);
     return userEntries.some(entry => entry.date === dateString && entry.completed);
   };
 
@@ -88,10 +96,20 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
       newDate.setMonth(newDate.getMonth() + 1);
     }
     setCurrentDate(newDate);
+    
+    // Notify parent to load new month data
+    if (onMonthChange) {
+      onMonthChange(newDate.getFullYear(), newDate.getMonth());
+    }
   };
 
   const goToCurrentMonth = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentDate(today);
+    
+    if (onMonthChange) {
+      onMonthChange(today.getFullYear(), today.getMonth());
+    }
   };
 
   const isToday = (date: Date): boolean => {
@@ -105,20 +123,20 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
     return date > today;
   };
 
-  const getTotalCompletedDays = (): number => {
-    return userEntries.filter(entry => entry.completed).length;
-  };
+  // Remove unused functions since we're no longer showing monthly stats
+  // const getMonthCompletedDays = (): number => {
+  //   const year = currentDate.getFullYear();
+  //   const month = currentDate.getMonth();
+  //   
+  //   return userEntries.filter(entry => {
+  //     if (!entry.completed) return false;
+  //     const entryDate = new Date(entry.date);
+  //     return entryDate.getFullYear() === year && entryDate.getMonth() === month;
+  //   }).length;
+  // };
 
-  const getMonthCompletedDays = (): number => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    
-    return userEntries.filter(entry => {
-      if (!entry.completed) return false;
-      const entryDate = new Date(entry.date);
-      return entryDate.getFullYear() === year && entryDate.getMonth() === month;
-    }).length;
-  };
+  // Use optimized monthly completed count if provided, otherwise calculate
+  // const displayMonthCompleted = monthCompleted > 0 ? monthCompleted : getMonthCompletedDays();
 
   const renderCalendarDay = (date: Date | null, index: number) => {
     if (!date) {
@@ -184,12 +202,8 @@ const MonthlyCalendarModal: React.FC<MonthlyCalendarModalProps> = ({
               <Text style={styles.statLabel}>Current Streak</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{getMonthCompletedDays()}</Text>
-              <Text style={styles.statLabel}>This Month</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{getTotalCompletedDays()}</Text>
-              <Text style={styles.statLabel}>Total Days</Text>
+              <Text style={styles.statNumber}>{longestStreak}</Text>
+              <Text style={styles.statLabel}>Longest Streak</Text>
             </View>
           </View>
 

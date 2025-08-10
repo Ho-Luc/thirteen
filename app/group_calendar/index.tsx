@@ -1,3 +1,4 @@
+// app/group_calendar/index.tsx - Optimized with bundle loading
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -8,7 +9,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { calendarService } from '../../services/calendarService';
+import { calendarService, GroupMember, CalendarEntry, UserStats, ChatMessage } from '../../services/calendarService';
+import { calendarCacheService } from '../../services/calendarCacheService';
 import { userService } from '../../services/userService';
 import { groupsService } from '../../services/groupsService';
 import { avatarUploadService } from '../../services/avatarUploadService';
@@ -18,67 +20,50 @@ import UserCalendarRow from '../../components/calendar/userCalendarRow';
 import ChatWindow from '../../components/calendar/chatWindow';
 import MonthlyCalendarModal from '../../components/calendar/monthlyCalendarModal';
 
-interface GroupMember {
-  id: string;
-  userId: string;
-  groupId: string;
-  userName: string;
-  avatarUrl?: string;
-  joinedAt: Date;
-}
-
-interface CalendarEntry {
-  id: string;
-  userId: string;
-  groupId: string;
-  date: string; // YYYY-MM-DD format
-  completed: boolean;
-  createdAt: Date;
-}
-
 interface UserStreak {
   userId: string;
   currentStreak: number;
   lastActiveDate: string;
 }
 
-interface ChatMessage {
-  id: string;
-  userId: string;
-  userName: string;
-  message: string;
-  timestamp: Date;
-}
-
 const GroupCalendar = () => {
   const router = useRouter();
   const params = useLocalSearchParams<{ groupId: string; groupName: string }>();
   
+  // Optimized state management
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [currentUserName, setCurrentUserName] = useState<string>('');
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
-  const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
+  
+  // Separate weekly and monthly data
+  const [weeklyEntries, setWeeklyEntries] = useState<CalendarEntry[]>([]);
+  const [monthlyEntries, setMonthlyEntries] = useState<CalendarEntry[]>([]);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  // User stats and streaks
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [userStreaks, setUserStreaks] = useState<UserStreak[]>([]);
+  
+  // Chat and UI state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [showMonthlyCalendar, setShowMonthlyCalendar] = useState(false);
   const [groupInfo, setGroupInfo] = useState<any>(null);
-  const [allUserEntries, setAllUserEntries] = useState<CalendarEntry[]>([]);
 
   // Get screen dimensions and calculate layout proportions
   const screenHeight = Dimensions.get('window').height;
-  const headerHeight = screenHeight * 0.10; // 10% for week header
-  const calendarRowsHeight = screenHeight * 0.38; // 38% for user calendar rows
-  const chatHeight = screenHeight * 0.52; // 52% for chat
+  const headerHeight = screenHeight * 0.10;
+  const calendarRowsHeight = screenHeight * 0.38;
+  const chatHeight = screenHeight * 0.52;
 
   // Get current week dates
   const getCurrentWeek = () => {
     const today = new Date();
-    const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const currentDay = today.getDay();
     const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay); // Start from Sunday
+    startOfWeek.setDate(today.getDate() - currentDay);
     
     const week = [];
     for (let i = 0; i < 7; i++) {
@@ -108,25 +93,7 @@ const GroupCalendar = () => {
     initializeCalendar();
   }, [params.groupId]);
 
-  // Automatically process all avatars when calendar loads
-  const autoProcessAvatarsOnLoad = async () => {
-    try {
-      const { userProfileService } = await import('../../services/userProfileService');
-      const userProfile = await userProfileService.getUserProfile();
-      
-      if (userProfile?.avatarUri && userProfile.avatarUri.startsWith('file://')) {
-        groupsService.forceAvatarUploadToAllGroups(currentUserId)
-          .then(() => {
-            loadGroupMembers(currentUserId);
-          })
-          .catch((error) => {
-            // Handle error silently
-          });
-      }
-    } catch (error: any) {
-    }
-  };
-
+  // OPTIMIZED: Single initialization with bundle loading
   const initializeCalendar = async () => {
     try {
       setIsLoading(true);
@@ -139,14 +106,23 @@ const GroupCalendar = () => {
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
       
-      await loadGroupMembers(userId);
-      autoProcessAvatarsOnLoad();
-      
-      await Promise.all([
-        loadCalendarEntries(),
-        loadUserStreaks(),
-        loadChatMessages()
+      // OPTIMIZATION: Load all essential data in 2 parallel calls instead of 6+ sequential calls
+      const [groupBundle, userBundle] = await Promise.all([
+        calendarService.getGroupDataBundle(params.groupId, currentWeek),
+        calendarService.getUserDataBundle(userId, params.groupId)
       ]);
+
+      // Set all data from bundles
+      setGroupMembers(groupBundle.members);
+      setWeeklyEntries(groupBundle.weeklyEntries);
+      setChatMessages(groupBundle.chatMessages);
+      
+      setUserStats(userBundle.stats);
+      setUserStreaks(userBundle.streaks);
+
+      // Find current user name
+      const currentUser = groupBundle.members.find(member => member.userId === userId);
+      setCurrentUserName(currentUser?.userName || 'You');
       
     } catch (error) {
       Alert.alert('Error', 'Failed to load calendar data');
@@ -155,81 +131,47 @@ const GroupCalendar = () => {
     }
   };
 
-  const loadGroupMembers = async (userId: string) => {
+  // OPTIMIZED: Load monthly data with pagination
+  const loadMonthlyData = async (year: number, month: number) => {
     try {
-      const members = await calendarService.getGroupMembers(params.groupId);
-      setGroupMembers(members);
+      let monthData = calendarCacheService.getCachedUserMonth(
+        currentUserId, 
+        params.groupId, 
+        year, 
+        month
+      );
       
-      const currentUser = members.find(member => member.userId === userId);
-      if (currentUser) {
-        setCurrentUserName(currentUser.userName);
-      } else {
-        setCurrentUserName('You');
-      }
-    } catch (error) {
-      setGroupMembers([]);
-      Alert.alert('Error', 'Failed to load group members');
-    }
-  };
-
-  const loadCalendarEntries = async () => {
-    try {
-      const entries = await calendarService.getCalendarEntries(params.groupId, currentWeek);
-      setCalendarEntries(entries);
-      
-      // Load all entries for the current user for monthly view
-      await loadAllUserEntries();
-    } catch (error) {
-      // Handle error silently
-    }
-  };
-
-  const loadAllUserEntries = async () => {
-    try {
-      // Get entries for the entire year to show in monthly calendar
-      const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-      const endOfYear = new Date(new Date().getFullYear(), 11, 31);
-      
-      // Create a fake week array spanning the whole year
-      const yearDates = [];
-      const currentDate = new Date(startOfYear);
-      while (currentDate <= endOfYear) {
-        yearDates.push(new Date(currentDate));
-        currentDate.setDate(currentDate.getDate() + 1);
+      if (!monthData) {
+        monthData = await calendarService.getUserMonthlyEntriesPaginated(
+          currentUserId, 
+          params.groupId, 
+          year, 
+          month
+        );
+        
+        calendarCacheService.setCachedUserMonth(
+          currentUserId, 
+          params.groupId, 
+          year,
+          month,
+          monthData
+        );
       }
       
-      const allEntries = await calendarService.getCalendarEntries(params.groupId, yearDates);
-      
-      // Filter to only current user's entries
-      const userEntries = allEntries.filter(entry => entry.userId === currentUserId);
-      setAllUserEntries(userEntries);
-    } catch (error) {
-      console.error('Error loading all user entries:', error);
-    }
-  };
-
-  const loadUserStreaks = async () => {
-    try {
-      const streaks = await calendarService.getUserStreaks(params.groupId);
-      setUserStreaks(streaks);
-    } catch (error) {
-      // Handle error silently
-    }
-  };
-
-  const loadChatMessages = async () => {
-    try {
-      const messages = await calendarService.getChatMessages(params.groupId);
-      setChatMessages(messages);
+      setMonthlyEntries(monthData);
     } catch (error) {
       // Handle error silently
     }
   };
 
   const formatDate = (date: Date): string => {
-    return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
+  // OPTIMIZED: Batch updates for better performance
   const toggleDay = async (userId: string, date: Date) => {
     if (userId !== currentUserId) {
       Alert.alert('Permission Denied', 'You can only edit your own calendar entries');
@@ -238,33 +180,47 @@ const GroupCalendar = () => {
 
     try {
       const dateString = formatDate(date);
-      const existingEntry = calendarEntries.find(
+      const existingEntry = weeklyEntries.find(
         entry => entry.userId === userId && entry.date === dateString
       );
 
+      // Use batch update if multiple changes are needed
+      const updates = [{
+        entryId: existingEntry?.id,
+        userId,
+        groupId: params.groupId,
+        date: dateString,
+        completed: existingEntry ? !existingEntry.completed : true
+      }];
+
+      const updatedEntries = await calendarService.batchUpdateCalendarEntries(updates);
+      
       if (existingEntry) {
-        const updatedEntry = await calendarService.updateCalendarEntry(
-          existingEntry.id,
-          !existingEntry.completed
-        );
-        
-        setCalendarEntries(prev => 
+        setWeeklyEntries(prev => 
           prev.map(entry => 
-            entry.id === existingEntry.id ? updatedEntry : entry
+            entry.id === existingEntry.id ? updatedEntries[0] : entry
           )
         );
       } else {
-        const newEntry = await calendarService.createCalendarEntry({
-          userId,
-          groupId: params.groupId,
-          date: dateString,
-          completed: true
-        });
-        
-        setCalendarEntries(prev => [...prev, newEntry]);
+        setWeeklyEntries(prev => [...prev, updatedEntries[0]]);
       }
 
-      await loadUserStreaks();
+      // Invalidate cache and reload dependent data
+      calendarCacheService.invalidateUserCache(userId, params.groupId, dateString);
+      
+      // Reload user stats efficiently
+      const userBundle = await calendarService.getUserDataBundle(userId, params.groupId);
+      setUserStats(userBundle.stats);
+      setUserStreaks(userBundle.streaks);
+      
+      // If monthly modal is open, refresh that data too
+      if (showMonthlyCalendar) {
+        const year = currentMonth.getFullYear();
+        const month = currentMonth.getMonth();
+        calendarCacheService.invalidateMonthCache(userId, params.groupId, year, month);
+        await loadMonthlyData(year, month);
+      }
+      
     } catch (error) {
       Alert.alert('Error', 'Failed to update calendar entry');
     }
@@ -281,7 +237,10 @@ const GroupCalendar = () => {
         await calendarService.updateUserAvatar(currentUserId, params.groupId, avatarUrl);
       }
       
-      await loadGroupMembers(currentUserId);
+      // Reload group members to get updated avatar
+      const groupBundle = await calendarService.getGroupDataBundle(params.groupId, currentWeek);
+      setGroupMembers(groupBundle.members);
+      
       setShowAvatarPicker(false);
     } catch (error) {
       Alert.alert('Error', 'Failed to update avatar');
@@ -290,7 +249,7 @@ const GroupCalendar = () => {
 
   const getUserEntry = (userId: string, date: Date): CalendarEntry | undefined => {
     const dateString = formatDate(date);
-    return calendarEntries.find(
+    return weeklyEntries.find(
       entry => entry.userId === userId && entry.date === dateString
     );
   };
@@ -303,7 +262,7 @@ const GroupCalendar = () => {
   const getDayCompletionData = (date: Date) => {
     const dateString = formatDate(date);
     const completedCount = groupMembers.filter(member => {
-      const entry = calendarEntries.find(
+      const entry = weeklyEntries.find(
         e => e.userId === member.userId && e.date === dateString
       );
       return entry?.completed || false;
@@ -358,7 +317,7 @@ const GroupCalendar = () => {
         isCurrentUser={isCurrentUser}
         onAvatarPress={() => {
           if (isCurrentUser) {
-            setShowMonthlyCalendar(true);
+            handleOpenMonthlyCalendar();
           }
         }}
       />
@@ -367,6 +326,24 @@ const GroupCalendar = () => {
 
   const getCurrentUserMember = (): GroupMember | undefined => {
     return groupMembers.find(member => member.userId === currentUserId);
+  };
+
+  const handleOpenMonthlyCalendar = () => {
+    setShowMonthlyCalendar(true);
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    loadMonthlyData(year, month);
+  };
+
+  const handleMonthChange = (year: number, month: number) => {
+    const newMonth = new Date(year, month, 1);
+    setCurrentMonth(newMonth);
+    loadMonthlyData(year, month);
+  };
+
+  const handleCloseMonthlyCalendar = () => {
+    setShowMonthlyCalendar(false);
+    setMonthlyEntries([]);
   };
 
   if (isLoading) {
@@ -379,7 +356,7 @@ const GroupCalendar = () => {
 
   return (
     <View style={styles.container}>
-      {/* Week Header - 10% of screen */}
+      {/* Week Header */}
       <View style={[styles.weekHeaderContainer, { height: headerHeight }]}>
         <WeekHeader
           weekDays={weekDays}
@@ -389,7 +366,7 @@ const GroupCalendar = () => {
         />
       </View>
 
-      {/* User Calendar Rows - 38% of screen */}
+      {/* User Calendar Rows */}
       <View style={[styles.userRowsContainer, { height: calendarRowsHeight }]}>
         <ScrollView 
           style={styles.userRowsScrollView} 
@@ -411,7 +388,7 @@ const GroupCalendar = () => {
         </ScrollView>
       </View>
 
-      {/* Chat Window - 52% of screen */}
+      {/* Chat Window */}
       <View style={[styles.chatContainer, { height: chatHeight }]}>
         <ChatWindow
           messages={chatMessages}
@@ -426,10 +403,12 @@ const GroupCalendar = () => {
       {showMonthlyCalendar && (
         <MonthlyCalendarModal
           visible={showMonthlyCalendar}
-          onClose={() => setShowMonthlyCalendar(false)}
-          userEntries={allUserEntries}
+          onClose={handleCloseMonthlyCalendar}
+          userEntries={monthlyEntries}
           userName={currentUserName}
-          currentStreak={getUserStreak(currentUserId)}
+          currentStreak={userStats?.currentStreak || 0}
+          longestStreak={userStats?.longestStreak || 0}
+          onMonthChange={handleMonthChange}
         />
       )}
 
