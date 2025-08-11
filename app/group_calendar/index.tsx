@@ -1,4 +1,3 @@
-// app/group_calendar/index.tsx - Optimized with bundle loading
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -93,7 +92,6 @@ const GroupCalendar = () => {
     initializeCalendar();
   }, [params.groupId]);
 
-  // OPTIMIZED: Single initialization with bundle loading
   const initializeCalendar = async () => {
     try {
       setIsLoading(true);
@@ -106,7 +104,6 @@ const GroupCalendar = () => {
       const group = await groupsService.getGroup(params.groupId);
       setGroupInfo(group);
       
-      // OPTIMIZATION: Load all essential data in 2 parallel calls instead of 6+ sequential calls
       const [groupBundle, userBundle] = await Promise.all([
         calendarService.getGroupDataBundle(params.groupId, currentWeek),
         calendarService.getUserDataBundle(userId, params.groupId)
@@ -131,7 +128,6 @@ const GroupCalendar = () => {
     }
   };
 
-  // OPTIMIZED: Load monthly data with pagination
   const loadMonthlyData = async (year: number, month: number) => {
     try {
       let monthData = calendarCacheService.getCachedUserMonth(
@@ -171,7 +167,6 @@ const GroupCalendar = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // OPTIMIZED: Batch updates for better performance
   const toggleDay = async (userId: string, date: Date) => {
     if (userId !== currentUserId) {
       Alert.alert('Permission Denied', 'You can only edit your own calendar entries');

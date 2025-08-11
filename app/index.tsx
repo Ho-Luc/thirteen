@@ -1,4 +1,3 @@
-// app/index.tsx - Updated without donation functionality
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 

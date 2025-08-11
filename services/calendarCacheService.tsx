@@ -21,7 +21,6 @@ class CalendarCacheService {
     }, 5 * 60 * 1000);
   }
 
-  // OPTIMIZATION 1: Generic cache methods to reduce code duplication
   private getCachedData<T>(key: string): T | null {
     const cached = this.cache.get(key);
     
