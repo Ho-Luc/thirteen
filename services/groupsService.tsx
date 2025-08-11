@@ -1,3 +1,4 @@
+// services/groupsService.tsx - Complete implementation with all optimizations
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
 import { userProfileService } from './userProfileService';
 import { autoCloudUploadService } from './autoCloudUploadService';
@@ -9,10 +10,38 @@ import {
 } from '../utils/database';
 
 class GroupsService {
-  /**
-   * Check if a user is the creator of a group
-   */
+  // OPTIMIZATION: Cache group creator status to reduce DB calls
+  private creatorCache = new Map<string, { isCreator: boolean; timestamp: number }>();
+  private readonly CREATOR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+  private getCachedCreatorStatus(userId: string, groupId: string): boolean | null {
+    const key = `${userId}-${groupId}`;
+    const cached = this.creatorCache.get(key);
+    
+    if (cached && (Date.now() - cached.timestamp) < this.CREATOR_CACHE_TTL) {
+      return cached.isCreator;
+    }
+    
+    this.creatorCache.delete(key);
+    return null;
+  }
+
+  private setCachedCreatorStatus(userId: string, groupId: string, isCreator: boolean): void {
+    const key = `${userId}-${groupId}`;
+    this.creatorCache.set(key, {
+      isCreator,
+      timestamp: Date.now()
+    });
+  }
+
+  // Check if a user is the creator of a group
   async isGroupCreator(userId: string, groupId: string): Promise<boolean> {
+    // Check cache first
+    const cached = this.getCachedCreatorStatus(userId, groupId);
+    if (cached !== null) {
+      return cached;
+    }
+
     try {
       const group = await databases.getDocument<GroupRecord>(
         appwriteConfig.databaseId,
@@ -20,118 +49,38 @@ class GroupsService {
         groupId
       );
       
-      return group.createdBy === userId;
+      const isCreator = group.createdBy === userId;
+      this.setCachedCreatorStatus(userId, groupId, isCreator);
+      return isCreator;
     } catch (error) {
       return false;
     }
   }
 
-  /**
-   * Leave a group (for non-creators) - removes membership but keeps chat history
-   */
-  async leaveGroup(userId: string, groupId: string): Promise<void> {
-    try {
-      const isCreator = await this.isGroupCreator(userId, groupId);
-      if (isCreator) {
-        throw new Error('Group creators cannot leave their own group. Use delete instead.');
+  // OPTIMIZATION: Retry logic for improved reliability
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 2,
+    delay: number = 1000
+  ): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)));
+        }
       }
-      
-      const memberships = await this.getUserMemberships(userId);
-      const membershipToRemove = memberships.find(m => m.groupId === groupId);
-      
-      if (!membershipToRemove) {
-        throw new Error('You are not a member of this group');
-      }
-      
-      await databases.deleteDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        membershipToRemove.$id
-      );
-    } catch (error: any) {
-      throw new Error(error.message || 'Failed to leave group. Please try again.');
     }
+    
+    throw lastError;
   }
 
-  /**
-   * Delete a group permanently (creators only) - removes everything
-   */
-  async deleteGroup(groupId: string, userId: string): Promise<void> {
-    try {
-      const isCreator = await this.isGroupCreator(userId, groupId);
-      if (!isCreator) {
-        throw new Error('Only the group creator can permanently delete the group');
-      }
-      
-      await this.deleteGroupMemberships(groupId);
-      await this.deleteGroupCalendarEntries(groupId);
-      await this.deleteGroupChatMessages(groupId);
-      
-      await databases.deleteDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupsCollectionId,
-        groupId
-      );
-    } catch (error: any) {
-      throw new Error(error.message || 'Failed to delete group. Please try again.');
-    }
-  }
-
-  /**
-   * Delete group calendar entries
-   */
-  private async deleteGroupCalendarEntries(groupId: string): Promise<void> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId
-      );
-
-      const groupEntries = response.documents.filter((doc: any) => doc.groupId === groupId);
-      
-      const deletePromises = groupEntries.map(entry =>
-        databases.deleteDocument(
-          appwriteConfig.databaseId,
-          appwriteConfig.calendarEntriesCollectionId,
-          entry.$id
-        )
-      );
-
-      await Promise.allSettled(deletePromises);
-    } catch (error) {
-      // Don't throw - this is cleanup
-    }
-  }
-
-  /**
-   * Delete group chat messages
-   */
-  private async deleteGroupChatMessages(groupId: string): Promise<void> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId
-      );
-
-      const groupMessages = response.documents.filter((doc: any) => doc.groupId === groupId);
-      
-      const deletePromises = groupMessages.map(message =>
-        databases.deleteDocument(
-          appwriteConfig.databaseId,
-          appwriteConfig.chatMessagesCollectionId,
-          message.$id
-        )
-      );
-
-      await Promise.allSettled(deletePromises);
-    } catch (error) {
-      // Don't throw - this is cleanup
-    }
-  }
-
-  /**
-   * Create a new group
-   */
+  // Create a new group
   async createGroup(groupData: {
     name: string;
     shareKey: string;
@@ -169,73 +118,7 @@ class GroupsService {
     }
   }
 
-  /**
-   * Create group membership with safe avatar cloud upload
-   */
-  private async createMembershipWithSafeAvatar(membershipData: {
-    userId: string;
-    groupId: string;
-  }): Promise<void> {
-    const userProfile = await userProfileService.getUserProfile();
-    const userName = userProfile?.name || 'Anonymous User';
-    
-    let cloudAvatarUrl: string | null = null;
-    try {
-      const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(membershipData.userId);
-      const timeoutPromise = new Promise<string | null>((_, reject) =>
-        setTimeout(() => reject(new Error('Avatar processing timeout')), 15000)
-      );
-      
-      cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
-    } catch (avatarError: any) {
-      // Continue without avatar - this is not critical
-    }
-
-    const membershipPayload: any = {
-      userId: membershipData.userId,
-      groupId: membershipData.groupId,
-      joinedAt: new Date().toISOString(),
-      userName: userName,
-    };
-
-    if (cloudAvatarUrl) {
-      membershipPayload.avatarUrl = cloudAvatarUrl;
-    }
-
-    const membershipResponse = await databases.createDocument<GroupMemberRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupMembersCollectionId,
-      generateId(),
-      membershipPayload
-    );
-  }
-
-  /**
-   * Fallback membership creation without avatar
-   */
-  private async createMembershipFallback(membershipData: {
-    userId: string;
-    groupId: string;
-  }): Promise<void> {
-    const userProfile = await userProfileService.getUserProfile();
-    const fallbackPayload = {
-      userId: membershipData.userId,
-      groupId: membershipData.groupId,
-      joinedAt: new Date().toISOString(),
-      userName: userProfile?.name || 'Anonymous User',
-    };
-    
-    const retryResponse = await databases.createDocument<GroupMemberRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupMembersCollectionId,
-      generateId(),
-      fallbackPayload
-    );
-  }
-
-  /**
-   * Join a group by share key
-   */
+  // Join a group by share key
   async joinGroup(shareKey: string, userId: string): Promise<Group> {
     try {
       const group = await this.findGroupByShareKey(shareKey);
@@ -266,9 +149,168 @@ class GroupsService {
     }
   }
 
-  /**
-   * Sync user profile to all group memberships
-   */
+  // Leave a group (for non-creators) - removes membership but keeps chat history
+  async leaveGroup(userId: string, groupId: string): Promise<void> {
+    try {
+      const isCreator = await this.isGroupCreator(userId, groupId);
+      if (isCreator) {
+        throw new Error('Group creators cannot leave their own group. Use delete instead.');
+      }
+      
+      const memberships = await this.getUserMemberships(userId);
+      const membershipToRemove = memberships.find(m => m.groupId === groupId);
+      
+      if (!membershipToRemove) {
+        throw new Error('You are not a member of this group');
+      }
+      
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        membershipToRemove.$id
+      );
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to leave group. Please try again.');
+    }
+  }
+
+  // Delete a group permanently (creators only) - removes everything
+  async deleteGroup(groupId: string, userId: string): Promise<void> {
+    try {
+      const isCreator = await this.isGroupCreator(userId, groupId);
+      if (!isCreator) {
+        throw new Error('Only the group creator can permanently delete the group');
+      }
+      
+      await Promise.all([
+        this.deleteGroupMemberships(groupId),
+        this.deleteGroupCalendarEntries(groupId),
+        this.deleteGroupChatMessages(groupId)
+      ]);
+      
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupsCollectionId,
+        groupId
+      );
+
+      this.clearCreatorCacheForGroup(groupId);
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to delete group. Please try again.');
+    }
+  }
+
+  // Create group membership with safe avatar cloud upload
+  private async createMembershipWithSafeAvatar(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<void> {
+    const userProfile = await userProfileService.getUserProfile();
+    const userName = userProfile?.name || 'Anonymous User';
+    
+    let cloudAvatarUrl: string | null = null;
+    try {
+      const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(membershipData.userId);
+      const timeoutPromise = new Promise<string | null>((_, reject) =>
+        setTimeout(() => reject(new Error('Avatar processing timeout')), 8000)
+      );
+      
+      cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
+    } catch (avatarError: any) {
+      // Continue without avatar - this is not critical
+    }
+
+    const membershipPayload: any = {
+      userId: membershipData.userId,
+      groupId: membershipData.groupId,
+      joinedAt: new Date().toISOString(),
+      userName: userName,
+    };
+
+    if (cloudAvatarUrl) {
+      membershipPayload.avatarUrl = cloudAvatarUrl;
+    }
+
+    await this.withRetry(async () => {
+      return await databases.createDocument<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        generateId(),
+        membershipPayload
+      );
+    });
+  }
+
+  // Fallback membership creation without avatar
+  private async createMembershipFallback(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<void> {
+    const userProfile = await userProfileService.getUserProfile();
+    const fallbackPayload = {
+      userId: membershipData.userId,
+      groupId: membershipData.groupId,
+      joinedAt: new Date().toISOString(),
+      userName: userProfile?.name || 'Anonymous User',
+    };
+    
+    await databases.createDocument<GroupMemberRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.groupMembersCollectionId,
+      generateId(),
+      fallbackPayload
+    );
+  }
+
+  // Delete group calendar entries
+  private async deleteGroupCalendarEntries(groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.calendarEntriesCollectionId
+      );
+
+      const groupEntries = response.documents.filter((doc: any) => doc.groupId === groupId);
+      
+      const deletePromises = groupEntries.map(entry =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.calendarEntriesCollectionId,
+          entry.$id
+        )
+      );
+
+      await Promise.allSettled(deletePromises);
+    } catch (error) {
+      // Don't throw - this is cleanup
+    }
+  }
+
+  // Delete group chat messages
+  private async deleteGroupChatMessages(groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId
+      );
+
+      const groupMessages = response.documents.filter((doc: any) => doc.groupId === groupId);
+      
+      const deletePromises = groupMessages.map(message =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.chatMessagesCollectionId,
+          message.$id
+        )
+      );
+
+      await Promise.allSettled(deletePromises);
+    } catch (error) {
+      // Don't throw - this is cleanup
+    }
+  }
+
+  // Sync user profile to all group memberships
   async syncUserProfileToAllGroups(userId: string): Promise<void> {
     try {
       const userProfile = await userProfileService.getUserProfile();
@@ -280,7 +322,7 @@ class GroupsService {
       try {
         const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(userId);
         const timeoutPromise = new Promise<string | null>((_, reject) =>
-          setTimeout(() => reject(new Error('Sync avatar timeout')), 10000)
+          setTimeout(() => reject(new Error('Sync avatar timeout')), 6000)
         );
         
         cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
@@ -313,15 +355,18 @@ class GroupsService {
         }
       });
 
-      await Promise.allSettled(updatePromises);
+      const results = await Promise.allSettled(updatePromises);
+      const failedUpdates = results.filter(result => result.status === 'rejected').length;
+      
+      if (failedUpdates > 0) {
+        console.warn(`${failedUpdates} profile sync operations failed`);
+      }
     } catch (error: any) {
       // Don't throw - let the user proceed even if sync fails
     }
   }
 
-  /**
-   * Force avatar upload for current user across all groups
-   */
+  // Force avatar upload for current user across all groups
   async forceAvatarUploadToAllGroups(userId: string): Promise<void> {
     try {
       if (!autoCloudUploadService.isUploadEnabled()) {
@@ -334,6 +379,7 @@ class GroupsService {
     }
   }
 
+  // Get all groups for a user (created and joined)
   async getUserGroups(userId: string): Promise<Group[]> {
     try {
       const [allGroups, userMemberships] = await Promise.all([
@@ -356,6 +402,7 @@ class GroupsService {
     }
   }
 
+  // Get a single group by ID
   async getGroup(groupId: string): Promise<Group> {
     try {
       const response = await databases.getDocument<GroupRecord>(
@@ -370,7 +417,48 @@ class GroupsService {
     }
   }
 
-  // Private helper methods
+  // Get group by share key for joining
+  async joinGroupByShareKey(shareKey: string): Promise<Group | null> {
+    try {
+      const group = await this.findGroupByShareKey(shareKey);
+      if (!group) {
+        return null;
+      }
+
+      return this.transformGroupRecord(group);
+    } catch (error: any) {
+      throw new Error('Failed to find group. Please check the share key and try again.');
+    }
+  }
+
+  // Check if user is a member of a group
+  async checkMembership(userId: string, groupId: string): Promise<boolean> {
+    try {
+      const memberships = await this.getUserMemberships(userId);
+      return memberships.some(membership => membership.groupId === groupId);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Update a group
+  async updateGroup(groupId: string, updates: Partial<{ name: string }>): Promise<Group> {
+    try {
+      const response = await databases.updateDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupsCollectionId,
+        groupId,
+        updates
+      );
+
+      return this.transformGroupRecord(response);
+    } catch (error: any) {
+      throw new Error('Failed to update group. Please try again.');
+    }
+  }
+
+  // PRIVATE HELPER METHODS
+
   private async getAllGroups(): Promise<GroupRecord[]> {
     const response = await databases.listDocuments<GroupRecord>(
       appwriteConfig.databaseId,
@@ -390,15 +478,6 @@ class GroupsService {
   private async findGroupByShareKey(shareKey: string): Promise<GroupRecord | null> {
     const allGroups = await this.getAllGroups();
     return allGroups.find(group => group.shareKey === shareKey) || null;
-  }
-
-  private async checkMembership(userId: string, groupId: string): Promise<boolean> {
-    try {
-      const memberships = await this.getUserMemberships(userId);
-      return memberships.some(membership => membership.groupId === groupId);
-    } catch (error) {
-      return false;
-    }
   }
 
   private async deleteGroupMemberships(groupId: string): Promise<void> {
@@ -437,6 +516,27 @@ class GroupsService {
       name: record.name,
       shareKey: record.shareKey,
       createdAt: new Date(record.$createdAt),
+    };
+  }
+
+  // CACHE MANAGEMENT METHODS
+
+  private clearCreatorCacheForGroup(groupId: string): void {
+    for (const [key] of this.creatorCache) {
+      if (key.endsWith(`-${groupId}`)) {
+        this.creatorCache.delete(key);
+      }
+    }
+  }
+
+  clearCreatorCache(): void {
+    this.creatorCache.clear();
+  }
+
+  getCreatorCacheStats(): { size: number; keys: string[] } {
+    return {
+      size: this.creatorCache.size,
+      keys: Array.from(this.creatorCache.keys())
     };
   }
 }

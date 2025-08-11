@@ -142,7 +142,7 @@ const GroupCalendar = () => {
       );
       
       if (!monthData) {
-        monthData = await calendarService.getUserMonthlyEntriesPaginated(
+        monthData = await calendarService.getUserMonthlyEntries(
           currentUserId, 
           params.groupId, 
           year, 

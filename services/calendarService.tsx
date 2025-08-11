@@ -50,6 +50,24 @@ class CalendarService {
     return `${year}-${month}-${day}`;
   }
 
+  private getCurrentWeek(): Date[] {
+    const today = new Date();
+    const currentDay = today.getDay();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - currentDay);
+    
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      week.push(date);
+    }
+    return week;
+  }
+
+  // CORE BUNDLE METHODS
+
+  // Get all group data in one efficient call
   async getGroupDataBundle(groupId: string, currentWeek: Date[]): Promise<{
     members: GroupMember[];
     weeklyEntries: CalendarEntry[];
@@ -59,7 +77,7 @@ class CalendarService {
       const startDate = this.formatDateConsistently(currentWeek[0]);
       const endDate = this.formatDateConsistently(currentWeek[6]);
 
-      // Execute all queries in parallel instead of sequentially
+      // Execute all queries in parallel
       const [membersResponse, weeklyEntriesResponse, chatResponse] = await Promise.all([
         databases.listDocuments(
           appwriteConfig.databaseId,
@@ -124,11 +142,13 @@ class CalendarService {
     }
   }
 
+  // Get user data efficiently
   async getUserDataBundle(userId: string, groupId: string): Promise<{
     stats: UserStats;
     streaks: UserStreak[];
   }> {
     try {
+      // Single query to get all user's completed entries
       const userEntriesResponse = await databases.listDocuments(
         appwriteConfig.databaseId,
         appwriteConfig.calendarEntriesCollectionId,
@@ -137,7 +157,7 @@ class CalendarService {
           Query.equal('userId', userId),
           Query.equal('completed', true),
           Query.orderDesc('date'),
-          Query.limit(500) // Reasonable limit - covers ~1.4 years of daily entries
+          Query.limit(500)
         ]
       );
 
@@ -150,10 +170,10 @@ class CalendarService {
         createdAt: new Date(doc.$createdAt),
       }));
 
-      // Calculate stats from the retrieved data
+      // Calculate stats from retrieved data
       const stats = this.calculateStatsFromEntries(userEntries);
 
-      // For streaks of all users, we need a separate optimized query
+      // Get streaks for all users in group
       const allStreaksResponse = await databases.listDocuments(
         appwriteConfig.databaseId,
         appwriteConfig.calendarEntriesCollectionId,
@@ -161,7 +181,7 @@ class CalendarService {
           Query.equal('groupId', groupId),
           Query.equal('completed', true),
           Query.orderDesc('date'),
-          Query.limit(1000) // Get recent entries for all users
+          Query.limit(1000)
         ]
       );
 
@@ -173,7 +193,8 @@ class CalendarService {
     }
   }
 
-  async getUserMonthlyEntriesPaginated(
+  // Get monthly data with pagination
+  async getUserMonthlyEntries(
     userId: string, 
     groupId: string, 
     year: number, 
@@ -183,7 +204,6 @@ class CalendarService {
       const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
       
-      // Use pagination for large datasets
       let allEntries: CalendarEntry[] = [];
       let offset = 0;
       const limit = 100;
@@ -218,8 +238,7 @@ class CalendarService {
         hasMore = entries.length === limit;
         offset += limit;
 
-        // Safety break to prevent infinite loops
-        if (offset > 1000) break;
+        if (offset > 1000) break; // Safety break
       }
 
       return allEntries;
@@ -239,7 +258,6 @@ class CalendarService {
       const results = await Promise.allSettled(
         updates.map(async (update) => {
           if (update.entryId) {
-            // Update existing entry
             return await databases.updateDocument(
               appwriteConfig.databaseId,
               appwriteConfig.calendarEntriesCollectionId,
@@ -247,7 +265,6 @@ class CalendarService {
               { completed: update.completed }
             );
           } else {
-            // Create new entry
             return await databases.createDocument(
               appwriteConfig.databaseId,
               appwriteConfig.calendarEntriesCollectionId,
@@ -276,6 +293,186 @@ class CalendarService {
     } catch (error) {
       throw new Error('Failed to batch update calendar entries');
     }
+  }
+
+  async createCalendarEntry(entryData: {
+    userId: string;
+    groupId: string;
+    date: string;
+    completed: boolean;
+  }): Promise<CalendarEntry> {
+    try {
+      const response = await databases.createDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.calendarEntriesCollectionId,
+        generateId(),
+        entryData
+      );
+
+      return {
+        id: response.$id,
+        userId: response.userId,
+        groupId: response.groupId,
+        date: response.date,
+        completed: response.completed,
+        createdAt: new Date(response.$createdAt),
+      };
+    } catch (error) {
+      throw new Error('Failed to create calendar entry');
+    }
+  }
+
+  async updateCalendarEntry(entryId: string, completed: boolean): Promise<CalendarEntry> {
+    try {
+      const response = await databases.updateDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.calendarEntriesCollectionId,
+        entryId,
+        { completed }
+      );
+
+      return {
+        id: response.$id,
+        userId: response.userId,
+        groupId: response.groupId,
+        date: response.date,
+        completed: response.completed,
+        createdAt: new Date(response.$createdAt),
+      };
+    } catch (error) {
+      throw new Error('Failed to update calendar entry');
+    }
+  }
+
+  async updateUserAvatar(userId: string, groupId: string, avatarUrl: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId)
+        ]
+      );
+      
+      if (response.documents.length === 0) {
+        throw new Error('User membership not found');
+      }
+
+      const membership = response.documents[0];
+      const updatePayload = avatarUrl.trim() === '' 
+        ? { avatarUrl: null } 
+        : { avatarUrl: avatarUrl };
+
+      await databases.updateDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        membership.$id,
+        updatePayload
+      );
+      
+    } catch (error) {
+      throw new Error('Failed to update user avatar');
+    }
+  }
+
+  async syncCurrentUserAvatar(userId: string, groupId: string): Promise<void> {
+    try {
+      const { userProfileService } = await import('../services/userProfileService');
+      const userProfile = await userProfileService.getUserProfile();
+      
+      if (!userProfile?.avatarUri) {
+        return;
+      }
+
+      let avatarUrl = userProfile.avatarUri;
+      
+      if (userProfile.avatarUri.startsWith('file://')) {
+        try {
+          const { avatarUploadService } = await import('../services/avatarUploadService');
+          const canUpload = await avatarUploadService.testUploadCapability();
+          
+          if (canUpload) {
+            avatarUrl = await avatarUploadService.uploadAvatar(userProfile.avatarUri, userId);
+            const updatedProfile = { ...userProfile, avatarUri: avatarUrl };
+            await userProfileService.saveUserProfile(updatedProfile);
+          }
+        } catch (uploadError: any) {
+          // Continue with local URL as fallback
+        }
+      }
+
+      await this.updateUserAvatar(userId, groupId, avatarUrl);
+    } catch (error: any) {
+    }
+  }
+
+  async sendChatMessage(
+    groupId: string, 
+    userId: string, 
+    userName: string, 
+    message: string
+  ): Promise<ChatMessage> {
+    try {
+      if (!message.trim()) {
+        throw new Error('Message cannot be empty');
+      }
+
+      if (message.length > 1000) {
+        throw new Error('Message is too long (max 1000 characters)');
+      }
+
+      const timestamp = new Date().toISOString();
+
+      const response = await databases.createDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        generateId(),
+        {
+          groupId: groupId,
+          userId: userId,
+          userName: userName,
+          message: message.trim(),
+          timestamp: timestamp,
+        }
+      );
+
+      return {
+        id: response.$id,
+        userId: response.userId,
+        userName: response.userName,
+        message: response.message,
+        timestamp: new Date(response.timestamp || response.$createdAt),
+      };
+    } catch (error) {
+      throw new Error(`Failed to send message: ${error.message || error}`);
+    }
+  }
+
+  async deleteChatMessage(messageId: string, userId: string): Promise<void> {
+    try {
+      const message = await databases.getDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        messageId
+      );
+
+      if (message.userId !== userId) {
+        throw new Error('You can only delete your own messages');
+      }
+
+      await databases.deleteDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.chatMessagesCollectionId,
+        messageId
+      );
+    } catch (error) {
+      throw new Error(`Failed to delete message: ${error.message || error}`);
+    }
+  }
+
+  subscribeToChat(groupId: string, callback: (message: ChatMessage) => void): () => void {
+    return () => {};
   }
 
   private calculateStatsFromEntries(entries: CalendarEntry[]): UserStats {
@@ -360,29 +557,41 @@ class CalendarService {
     return longestStreak;
   }
 
+  // Updated streak calculation - starts from yesterday, adds today if completed
   private calculateStreakOptimized(completedEntries: CalendarEntry[]): number {
     if (completedEntries.length === 0) return 0;
 
     const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
     const completedDates = new Set(
       completedEntries
         .filter(entry => entry.completed)
         .map(entry => entry.date)
     );
 
+    // Start counting from yesterday
     let streak = 0;
-    let checkDate = new Date(today);
+    let checkDate = new Date(yesterday);
     
+    // Count backwards from yesterday
     for (let i = 0; i < 365; i++) {
       const dateString = this.formatDateConsistently(checkDate);
       
       if (completedDates.has(dateString)) {
         streak++;
       } else {
-        break;
+        break; // Streak broken
       }
       
       checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    // Add today to the streak if it's completed
+    const todayString = this.formatDateConsistently(today);
+    if (completedDates.has(todayString)) {
+      streak++;
     }
     
     return streak;
@@ -394,330 +603,38 @@ class CalendarService {
     }
 
     const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
     const completedDates = new Set(userEntries.map(entry => entry.date));
     
+    // Start counting from yesterday
     let currentStreak = 0;
-    let checkDate = new Date(today);
+    let checkDate = new Date(yesterday);
     
+    // Count backwards from yesterday
     for (let i = 0; i < 365; i++) {
       const dateString = this.formatDateConsistently(checkDate);
       
       if (completedDates.has(dateString)) {
         currentStreak++;
       } else {
-        break;
+        break; // Streak broken
       }
       
       checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    // Add today to the streak if it's completed
+    const todayString = this.formatDateConsistently(today);
+    if (completedDates.has(todayString)) {
+      currentStreak++;
     }
 
     return {
       currentStreak,
       lastActiveDate: userEntries.length > 0 ? userEntries.sort((a, b) => b.date.localeCompare(a.date))[0].date : '',
     };
-  }
-
-  private getCurrentWeek(): Date[] {
-    const today = new Date();
-    const currentDay = today.getDay();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay);
-    
-    const week = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      week.push(date);
-    }
-    return week;
-  }
-
-  async getUserEntriesForDateRange(
-    userId: string, 
-    groupId: string, 
-    startDate: string, 
-    endDate: string
-  ): Promise<CalendarEntry[]> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId,
-        [
-          Query.equal('groupId', groupId),
-          Query.equal('userId', userId),
-          Query.greaterThanEqual('date', startDate),
-          Query.lessThanEqual('date', endDate),
-          Query.orderAsc('date')
-        ]
-      );
-
-      return response.documents.map((doc: any) => ({
-        id: doc.$id,
-        userId: doc.userId,
-        groupId: doc.groupId,
-        date: doc.date,
-        completed: doc.completed,
-        createdAt: new Date(doc.$createdAt),
-      }));
-    } catch (error) {
-      throw new Error('Failed to fetch user calendar entries');
-    }
-  }
-
-  async getUserMonthlyEntries(
-    userId: string, 
-    groupId: string, 
-    year: number, 
-    month: number
-  ): Promise<CalendarEntry[]> {
-    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
-    
-    return this.getUserEntriesForDateRange(userId, groupId, startDate, endDate);
-  }
-
-  async getUserAllCompletedEntries(userId: string, groupId: string): Promise<CalendarEntry[]> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId,
-        [
-          Query.equal('groupId', groupId),
-          Query.equal('userId', userId),
-          Query.equal('completed', true),
-          Query.orderDesc('date'),
-          Query.limit(1000)
-        ]
-      );
-
-      return response.documents.map((doc: any) => ({
-        id: doc.$id,
-        userId: doc.userId,
-        groupId: doc.groupId,
-        date: doc.date,
-        completed: doc.completed,
-        createdAt: new Date(doc.$createdAt),
-      }));
-    } catch (error) {
-      return [];
-    }
-  }
-
-  async getGroupMembers(groupId: string): Promise<GroupMember[]> {
-    const bundle = await this.getGroupDataBundle(groupId, this.getCurrentWeek());
-    return bundle.members;
-  }
-
-  async getCalendarEntries(groupId: string, weekDates: Date[]): Promise<CalendarEntry[]> {
-    const bundle = await this.getGroupDataBundle(groupId, weekDates);
-    return bundle.weeklyEntries;
-  }
-
-  async getChatMessages(groupId: string, limit: number = 50): Promise<ChatMessage[]> {
-    const bundle = await this.getGroupDataBundle(groupId, this.getCurrentWeek());
-    return bundle.chatMessages;
-  }
-
-  async getUserStats(userId: string, groupId: string): Promise<UserStats> {
-    const bundle = await this.getUserDataBundle(userId, groupId);
-    return bundle.stats;
-  }
-
-  async getUserStreaks(groupId: string): Promise<UserStreak[]> {
-    // This is less efficient but kept for compatibility
-    const currentWeek = this.getCurrentWeek();
-    const bundle = await this.getGroupDataBundle(groupId, currentWeek);
-    const userBundle = await this.getUserDataBundle(bundle.members[0]?.userId || '', groupId);
-    return userBundle.streaks;
-  }
-
-  // Create a new calendar entry
-  async createCalendarEntry(entryData: {
-    userId: string;
-    groupId: string;
-    date: string;
-    completed: boolean;
-  }): Promise<CalendarEntry> {
-    try {
-      const response = await databases.createDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId,
-        generateId(),
-        entryData
-      );
-
-      return {
-        id: response.$id,
-        userId: response.userId,
-        groupId: response.groupId,
-        date: response.date,
-        completed: response.completed,
-        createdAt: new Date(response.$createdAt),
-      };
-    } catch (error) {
-      throw new Error('Failed to create calendar entry');
-    }
-  }
-
-  // Update an existing calendar entry
-  async updateCalendarEntry(entryId: string, completed: boolean): Promise<CalendarEntry> {
-    try {
-      const response = await databases.updateDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId,
-        entryId,
-        { completed }
-      );
-
-      return {
-        id: response.$id,
-        userId: response.userId,
-        groupId: response.groupId,
-        date: response.date,
-        completed: response.completed,
-        createdAt: new Date(response.$createdAt),
-      };
-    } catch (error) {
-      throw new Error('Failed to update calendar entry');
-    }
-  }
-
-  // Update user avatar
-  async updateUserAvatar(userId: string, groupId: string, avatarUrl: string): Promise<void> {
-    try {
-      const response = await databases.listDocuments(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        [
-          Query.equal('userId', userId),
-          Query.equal('groupId', groupId)
-        ]
-      );
-      
-      if (response.documents.length === 0) {
-        throw new Error('User membership not found');
-      }
-
-      const membership = response.documents[0];
-      const updatePayload = avatarUrl.trim() === '' 
-        ? { avatarUrl: null } 
-        : { avatarUrl: avatarUrl };
-
-      await databases.updateDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        membership.$id,
-        updatePayload
-      );
-      
-    } catch (error) {
-      throw new Error('Failed to update user avatar');
-    }
-  }
-
-  // Sync user avatar to current group membership
-  async syncCurrentUserAvatar(userId: string, groupId: string): Promise<void> {
-    try {
-      const { userProfileService } = await import('../services/userProfileService');
-      const userProfile = await userProfileService.getUserProfile();
-      
-      if (!userProfile?.avatarUri) {
-        return;
-      }
-
-      let avatarUrl = userProfile.avatarUri;
-      
-      if (userProfile.avatarUri.startsWith('file://')) {
-        try {
-          const { avatarUploadService } = await import('../services/avatarUploadService');
-          const canUpload = await avatarUploadService.testUploadCapability();
-          
-          if (canUpload) {
-            avatarUrl = await avatarUploadService.uploadAvatar(userProfile.avatarUri, userId);
-            const updatedProfile = { ...userProfile, avatarUri: avatarUrl };
-            await userProfileService.saveUserProfile(updatedProfile);
-          }
-        } catch (uploadError: any) {
-          // Continue with local URL as fallback
-        }
-      }
-
-      await this.updateUserAvatar(userId, groupId, avatarUrl);
-    } catch (error: any) {
-    }
-  }
-
-  // Send a chat message
-  async sendChatMessage(
-    groupId: string, 
-    userId: string, 
-    userName: string, 
-    message: string
-  ): Promise<ChatMessage> {
-    try {
-      if (!message.trim()) {
-        throw new Error('Message cannot be empty');
-      }
-
-      if (message.length > 1000) {
-        throw new Error('Message is too long (max 1000 characters)');
-      }
-
-      const timestamp = new Date().toISOString();
-
-      const response = await databases.createDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId,
-        generateId(),
-        {
-          groupId: groupId,
-          userId: userId,
-          userName: userName,
-          message: message.trim(),
-          timestamp: timestamp,
-        }
-      );
-
-      const chatMessage: ChatMessage = {
-        id: response.$id,
-        userId: response.userId,
-        userName: response.userName,
-        message: response.message,
-        timestamp: new Date(response.timestamp || response.$createdAt),
-      };
-
-      return chatMessage;
-    } catch (error) {
-      throw new Error(`Failed to send message: ${error.message || error}`);
-    }
-  }
-
-  // Delete a chat message
-  async deleteChatMessage(messageId: string, userId: string): Promise<void> {
-    try {
-      const message = await databases.getDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId,
-        messageId
-      );
-
-      if (message.userId !== userId) {
-        throw new Error('You can only delete your own messages');
-      }
-
-      await databases.deleteDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId,
-        messageId
-      );
-    } catch (error) {
-      throw new Error(`Failed to delete message: ${error.message || error}`);
-    }
-  }
-
-  // Subscribe to real-time chat updates (placeholder)
-  subscribeToChat(groupId: string, callback: (message: ChatMessage) => void): () => void {
-    return () => {};
   }
 }
 
