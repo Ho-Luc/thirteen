@@ -1,4 +1,3 @@
-// services/groupsService.tsx - Complete implementation with all optimizations
 import { databases, appwriteConfig, generateId } from '../lib/appwrite';
 import { userProfileService } from './userProfileService';
 import { autoCloudUploadService } from './autoCloudUploadService';
@@ -10,7 +9,6 @@ import {
 } from '../utils/database';
 
 class GroupsService {
-  // OPTIMIZATION: Cache group creator status to reduce DB calls
   private creatorCache = new Map<string, { isCreator: boolean; timestamp: number }>();
   private readonly CREATOR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -518,8 +516,6 @@ class GroupsService {
       createdAt: new Date(record.$createdAt),
     };
   }
-
-  // CACHE MANAGEMENT METHODS
 
   private clearCreatorCacheForGroup(groupId: string): void {
     for (const [key] of this.creatorCache) {
