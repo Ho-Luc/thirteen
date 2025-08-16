@@ -1,50 +1,47 @@
 import React from 'react';
 import { Stack } from "expo-router";
-import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 const RootLayout = () => {
   return (
-    <KeyboardProvider>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: {
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: {
+          backgroundColor: "#fff",
+          paddingHorizontal: 10,
+          paddingTop: 10,
+        },
+      }}>
+      <Stack.Screen 
+        name="index" 
+        options={{
+          title: "Home"
+        }}
+      />
+      <Stack.Screen 
+        name="my-groups/index" 
+        options={{
+          title: "Home" 
+        }}
+      />
+      <Stack.Screen 
+        name="group_calendar/index" 
+        options={{
+          headerShown: true,
+          title: "Calendar",
+          headerStyle: {
             backgroundColor: "#fff",
-            paddingHorizontal: 10,
-            paddingTop: 10,
           },
-        }}>
-        <Stack.Screen 
-          name="index" 
-          options={{
-            title: "Home"
-          }}
-        />
-        <Stack.Screen 
-          name="my-groups/index" 
-          options={{
-            title: "Home" 
-          }}
-        />
-        <Stack.Screen 
-          name="group_calendar/index" 
-          options={{
-            headerShown: true,
-            title: "Calendar",
-            headerStyle: {
-              backgroundColor: "#fff",
-            },
-            headerTintColor: "#4287f5",
-            headerTitleStyle: {
-              fontWeight: "bold",
-              fontSize: 18,
-            },
-            headerShadowVisible: false,
-            headerBackTitle: "Groups",
-          }}
-        />
-      </Stack>
-    </KeyboardProvider>
+          headerTintColor: "#4287f5",
+          headerTitleStyle: {
+            fontWeight: "bold",
+            fontSize: 18,
+          },
+          headerShadowVisible: false,
+          headerBackTitle: "Groups",
+        }}
+      />
+    </Stack>
   );
 };
 
