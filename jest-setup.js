@@ -1,3 +1,5 @@
+import '@testing-library/jest-native/extend-expect';
+
 // Mock AsyncStorage
 jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn(() => Promise.resolve()),
@@ -10,7 +12,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   multiRemove: jest.fn(() => Promise.resolve()),
 }));
 
-// Mock expo-image-picker
+// Mock expo-image-picker globally
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   requestCameraPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
@@ -39,4 +41,9 @@ jest.mock('expo-image-manipulator', () => ({
 // Mock expo-file-system
 jest.mock('expo-file-system', () => ({
   getInfoAsync: jest.fn(() => Promise.resolve({ exists: true, size: 1024 })),
+}));
+
+jest.mock('react-native/Libraries/Linking/Linking', () => ({
+  canOpenURL: jest.fn(() => Promise.resolve(true)),
+  openURL: jest.fn(() => Promise.resolve()),
 }));

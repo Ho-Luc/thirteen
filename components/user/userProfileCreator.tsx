@@ -86,7 +86,6 @@ const UserProfileCreator: React.FC<UserProfileCreatorProps> = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick image from library');
-      console.error('Image picker error:', error);
     } finally {
       setIsProcessing(false);
     }
@@ -121,7 +120,6 @@ const UserProfileCreator: React.FC<UserProfileCreatorProps> = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to take photo');
-      console.error('Camera error:', error);
     } finally {
       setIsProcessing(false);
     }
