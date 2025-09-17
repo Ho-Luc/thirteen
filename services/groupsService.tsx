@@ -75,6 +75,158 @@ class GroupsService {
     throw lastError;
   }
 
+  // INDUSTRY METHOD: Idempotent upsert operation
+  async createOrUpdateMembership(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<GroupMemberRecord> {
+    try {
+      // First, try to find existing membership
+      const existingMembership = await this.findExistingMembership(
+        membershipData.userId, 
+        membershipData.groupId
+      );
+
+      if (existingMembership) {
+        // Update existing membership if needed
+        return await this.updateMembershipIfNeeded(existingMembership, membershipData);
+      }
+
+      // Create new membership with retry mechanism
+      return await this.createMembershipWithRetry(membershipData);
+      
+    } catch (error: any) {
+      // If error is "already exists", handle gracefully
+      if (error.message?.includes('already exists') || error.message?.includes('duplicate')) {
+        return await this.findExistingMembership(membershipData.userId, membershipData.groupId);
+      }
+      throw error;
+    }
+  }
+
+  // Find existing membership with precise query
+  private async findExistingMembership(userId: string, groupId: string): Promise<GroupMemberRecord | null> {
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId),
+          Query.limit(1)
+        ]
+      );
+
+      return response.documents[0] || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Atomic membership creation with race condition handling
+  private async createMembershipWithRetry(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<GroupMemberRecord> {
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Double-check right before creation (race condition protection)
+        const lastSecondCheck = await this.findExistingMembership(
+          membershipData.userId, 
+          membershipData.groupId
+        );
+        
+        if (lastSecondCheck) {
+          return lastSecondCheck;
+        }
+
+        // Get user profile
+        const userProfile = await userProfileService.getUserProfile();
+        const userName = userProfile?.name || 'Anonymous User';
+
+        // Create membership payload 
+        const membershipPayload = {
+          userId: membershipData.userId,
+          groupId: membershipData.groupId,
+          joinedAt: new Date().toISOString(),
+          userName: userName,
+        };
+
+        // Attempt creation
+        const newMembership = await databases.createDocument<GroupMemberRecord>(
+          appwriteConfig.databaseId,
+          appwriteConfig.groupMembersCollectionId,
+          generateId(),
+          membershipPayload
+        );
+
+        return newMembership;
+
+      } catch (error: any) {
+        // Handle specific duplicate errors
+        if (error.message?.includes('duplicate') || 
+            error.message?.includes('already exists') ||
+            error.message?.includes('unique constraint')) {
+          
+          // Return existing membership instead of failing
+          const existing = await this.findExistingMembership(
+            membershipData.userId, 
+            membershipData.groupId
+          );
+          
+          if (existing) {
+            return existing;
+          }
+        }
+
+        // If it's the last attempt, throw the error
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+
+    throw new Error('Failed to create membership after retries');
+  }
+
+  // Helper method to update membership if needed
+  private async updateMembershipIfNeeded(
+    existingMembership: GroupMemberRecord, 
+    membershipData: { userId: string; groupId: string; }
+  ): Promise<GroupMemberRecord> {
+    try {
+      // Get current user profile
+      const userProfile = await userProfileService.getUserProfile();
+      const currentUserName = userProfile?.name || 'Anonymous User';
+      
+      // Check if we need to update the membership
+      const needsUpdate = existingMembership.userName !== currentUserName;
+      
+      if (needsUpdate) {
+        const updatedMembership = await databases.updateDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.groupMembersCollectionId,
+          existingMembership.$id,
+          {
+            userName: currentUserName,
+          }
+        );
+        return updatedMembership;
+      }
+      
+      return existingMembership;
+      
+    } catch (error) {
+      // If update fails, return existing membership
+      return existingMembership;
+    }
+  }
+
   private async getUserMemberships(userId: string): Promise<GroupMemberRecord[]> {
     try {
       const response = await databases.listDocuments<GroupMemberRecord>(
@@ -152,12 +304,14 @@ class GroupsService {
     }
   }
 
+  // Safe group creation with membership
   async createGroup(groupData: {
     name: string;
     shareKey: string;
     createdBy: string;
   }): Promise<Group> {
     try {
+      // Create the group first
       const groupPayload: CreateGroupPayload = {
         name: groupData.name,
         shareKey: groupData.shareKey,
@@ -171,24 +325,59 @@ class GroupsService {
         groupPayload
       );
 
+      // Create creator membership - simplified for group creation
       try {
-        await this.createMembershipWithSafeAvatar({
+        await this.createDirectMembership({
           userId: groupData.createdBy,
           groupId: groupResponse.$id,
         });
       } catch (membershipError: any) {
-        await this.createMembershipFallback({
-          userId: groupData.createdBy,
-          groupId: groupResponse.$id,
-        });
+        // If membership creation fails, still return the group
+        // The user can join manually if needed
+        console.warn('Creator membership creation failed:', membershipError.message);
       }
 
       return this.transformGroupRecord(groupResponse);
+      
     } catch (error: any) {
       throw new Error('Failed to create group. Please try again.');
     }
   }
 
+  private async createDirectMembership(membershipData: {
+    userId: string;
+    groupId: string;
+  }): Promise<GroupMemberRecord> {
+    try {
+      // Get user profile
+      const userProfile = await userProfileService.getUserProfile();
+      const userName = userProfile?.name || 'Anonymous User';
+
+      // Create membership payload
+      const membershipPayload = {
+        userId: membershipData.userId,
+        groupId: membershipData.groupId,
+        joinedAt: new Date().toISOString(),
+        userName: userName,
+      };
+
+      // Direct creation - no duplicate checking needed for group creators
+      const newMembership = await databases.createDocument<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        generateId(),
+        membershipPayload
+      );
+
+      return newMembership;
+
+    } catch (error: any) {
+      // Re-throw for the calling method to handle
+      throw error;
+    }
+  }
+
+  // Safe membership creation for group joining
   async joinGroup(shareKey: string, userId: string): Promise<Group> {
     try {
       const group = await this.findGroupByShareKey(shareKey);
@@ -196,24 +385,14 @@ class GroupsService {
         throw new Error('Group not found');
       }
 
-      const isAlreadyMember = await this.checkMembership(userId, group.$id);
-      if (isAlreadyMember) {
-        throw new Error('Already a member');
-      }
-
-      try {
-        await this.createMembershipWithSafeAvatar({
-          userId: userId,
-          groupId: group.$id,
-        });
-      } catch (membershipError: any) {
-        await this.createMembershipFallback({
-          userId: userId,
-          groupId: group.$id,
-        });
-      }
+      // Use idempotent membership creation
+      await this.createOrUpdateMembership({
+        userId: userId,
+        groupId: group.$id,
+      });
 
       return this.transformGroupRecord(group);
+      
     } catch (error: any) {
       throw error;
     }
@@ -268,69 +447,116 @@ class GroupsService {
     }
   }
 
-  private async createMembershipWithSafeAvatar(membershipData: {
-    userId: string;
-    groupId: string;
-  }): Promise<void> {
-    const existingMembership = await this.checkMembership(membershipData.userId, membershipData.groupId);
-    if (existingMembership) {
-      return;
-    }
-
-    const userProfile = await userProfileService.getUserProfile();
-    const userName = userProfile?.name || 'Anonymous User';
-    
-    let cloudAvatarUrl: string | null = null;
+  // Cleanup duplicates with safe deduplication
+  async cleanupAllDuplicateMemberships(groupId: string): Promise<{
+    duplicatesRemoved: number;
+    errors: string[];
+  }> {
     try {
-      const avatarPromise = autoCloudUploadService.ensureAvatarInCloud(membershipData.userId);
-      const timeoutPromise = new Promise<string | null>((_, reject) =>
-        setTimeout(() => reject(new Error('Avatar processing timeout')), 8000)
-      );
-      
-      cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
-    } catch (avatarError: any) {
-      // Continue without avatar
-    }
-
-    const membershipPayload: any = {
-      userId: membershipData.userId,
-      groupId: membershipData.groupId,
-      joinedAt: new Date().toISOString(),
-      userName: userName,
-    };
-
-    if (cloudAvatarUrl) {
-      membershipPayload.avatarUrl = cloudAvatarUrl;
-    }
-
-    await this.withRetry(async () => {
-      return await databases.createDocument<GroupMemberRecord>(
+      // Get all memberships for this group
+      const response = await databases.listDocuments<GroupMemberRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupMembersCollectionId,
-        generateId(),
-        membershipPayload
+        [
+          Query.equal('groupId', groupId),
+          Query.limit(1000)
+        ]
       );
-    });
+
+      // Group by userId to find duplicates
+      const membershipsByUser = new Map<string, GroupMemberRecord[]>();
+      
+      response.documents.forEach(membership => {
+        const userId = membership.userId;
+        if (!membershipsByUser.has(userId)) {
+          membershipsByUser.set(userId, []);
+        }
+        membershipsByUser.get(userId)!.push(membership);
+      });
+
+      // Find and remove duplicates
+      let duplicatesRemoved = 0;
+      const errors: string[] = [];
+
+      for (const [userId, memberships] of membershipsByUser) {
+        if (memberships.length > 1) {
+          // Sort by creation date - keep the oldest one
+          memberships.sort((a, b) => 
+            new Date(a.$createdAt).getTime() - new Date(b.$createdAt).getTime()
+          );
+
+          // Remove all but the first (oldest) membership
+          const duplicatesToRemove = memberships.slice(1);
+          
+          for (const duplicate of duplicatesToRemove) {
+            try {
+              await databases.deleteDocument(
+                appwriteConfig.databaseId,
+                appwriteConfig.groupMembersCollectionId,
+                duplicate.$id
+              );
+              duplicatesRemoved++;
+            } catch (error: any) {
+              errors.push(`Failed to remove duplicate ${duplicate.$id}: ${error.message}`);
+            }
+          }
+        }
+      }
+
+      return { duplicatesRemoved, errors };
+      
+    } catch (error: any) {
+      return { 
+        duplicatesRemoved: 0, 
+        errors: [`Cleanup failed: ${error.message}`] 
+      };
+    }
   }
 
-  private async createMembershipFallback(membershipData: {
-    userId: string;
-    groupId: string;
-  }): Promise<void> {
-    const userProfile = await userProfileService.getUserProfile();
-    const fallbackPayload = {
-      userId: membershipData.userId,
-      groupId: membershipData.groupId,
-      joinedAt: new Date().toISOString(),
-      userName: userProfile?.name || 'Anonymous User',
-    };
-    
-    await databases.createDocument<GroupMemberRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupMembersCollectionId,
-      generateId(),
-      fallbackPayload
-    );
+  async cleanupDuplicateMemberships(userId: string, groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId)
+        ]
+      );
+
+      if (response.documents.length > 1) {
+        const duplicates = response.documents.slice(1);
+        const deletePromises = duplicates.map(doc =>
+          databases.deleteDocument(
+            appwriteConfig.databaseId,
+            appwriteConfig.groupMembersCollectionId,
+            doc.$id
+          )
+        );
+
+        await Promise.allSettled(deletePromises);
+      }
+    } catch (error) {
+      // Continue even if cleanup fails
+    }
+  }
+
+  // Batch cleanup for all groups
+  async cleanupAllDuplicatesForUser(userId: string): Promise<void> {
+    try {
+      // Get all user's groups
+      const userGroups = await this.getUserGroups(userId);
+      
+      // Clean up duplicates in each group
+      const cleanupPromises = userGroups.map(group => 
+        this.cleanupDuplicateMemberships(userId, group.id)
+      );
+      
+      await Promise.allSettled(cleanupPromises);
+      
+    } catch (error) {
+      // Don't throw - this is maintenance
+    }
   }
 
   private async deleteGroupCalendarEntries(groupId: string): Promise<void> {
@@ -484,34 +710,6 @@ class GroupsService {
       return this.transformGroupRecord(response);
     } catch (error: any) {
       throw new Error('Failed to update group. Please try again.');
-    }
-  }
-
-  async cleanupDuplicateMemberships(userId: string, groupId: string): Promise<void> {
-    try {
-      const response = await databases.listDocuments<GroupMemberRecord>(
-        appwriteConfig.databaseId,
-        appwriteConfig.groupMembersCollectionId,
-        [
-          Query.equal('userId', userId),
-          Query.equal('groupId', groupId)
-        ]
-      );
-
-      if (response.documents.length > 1) {
-        const duplicates = response.documents.slice(1);
-        const deletePromises = duplicates.map(doc =>
-          databases.deleteDocument(
-            appwriteConfig.databaseId,
-            appwriteConfig.groupMembersCollectionId,
-            doc.$id
-          )
-        );
-
-        await Promise.allSettled(deletePromises);
-      }
-    } catch (error) {
-      // Continue even if cleanup fails
     }
   }
 

@@ -181,12 +181,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [currentUserId]);
 
   const renderEmptyState = useCallback(() => (
-    <View style={styles.emptyChat}>
+    <View style={[styles.emptyChat, styles.emptyStateInverted]}>
       <Text style={styles.emptyChatText}>No messages yet</Text>
       <Text style={styles.emptyChatSubtext}>Start the conversation</Text>
     </View>
   ), []);
-
+  
   return (
     <View style={styles.container}>
       {/* Expanded Chat Modal */}
@@ -354,6 +354,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+
+  emptyStateInverted: {
+    transform: [{ rotate: '180deg' }],
   },
   
   // Full Screen Modal Style

@@ -67,22 +67,25 @@ class CalendarService {
 
   // CORE BUNDLE METHODS
 
-  // Get all group data in one efficient call
+  // Enhanced group data fetching with automatic deduplication
   async getGroupDataBundle(groupId: string, currentWeek: Date[]): Promise<{
     members: GroupMember[];
     weeklyEntries: CalendarEntry[];
     chatMessages: ChatMessage[];
+    duplicatesFound: boolean;
   }> {
     try {
       const startDate = this.formatDateConsistently(currentWeek[0]);
       const endDate = this.formatDateConsistently(currentWeek[6]);
 
-      // Execute all queries in parallel
       const [membersResponse, weeklyEntriesResponse, chatResponse] = await Promise.all([
         databases.listDocuments(
           appwriteConfig.databaseId,
           appwriteConfig.groupMembersCollectionId,
-          [Query.equal('groupId', groupId)]
+          [
+            Query.equal('groupId', groupId),
+            Query.limit(100)
+          ]
         ),
         databases.listDocuments(
           appwriteConfig.databaseId,
@@ -104,7 +107,7 @@ class CalendarService {
         )
       ]);
 
-      const members = membersResponse.documents.map((doc: any) => ({
+      const rawMembers = membersResponse.documents.map((doc: any) => ({
         id: doc.$id,
         userId: doc.userId,
         groupId: doc.groupId,
@@ -112,6 +115,18 @@ class CalendarService {
         avatarUrl: doc.avatarUrl,
         joinedAt: new Date(doc.joinedAt || doc.$createdAt),
       }));
+
+      // Check if duplicates exist before deduplication
+      const uniqueUserIds = new Set(rawMembers.map(m => m.userId));
+      const duplicatesFound = rawMembers.length !== uniqueUserIds.size;
+
+      // Deduplicate members
+      const uniqueMembers = this.deduplicateMembers(rawMembers);
+
+      // If duplicates were found, trigger background cleanup
+      if (duplicatesFound) {
+        this.scheduleBackgroundCleanup(groupId, rawMembers);
+      }
 
       const weeklyEntries = weeklyEntriesResponse.documents.map((doc: any) => ({
         id: doc.$id,
@@ -133,12 +148,107 @@ class CalendarService {
         .reverse();
 
       return {
-        members: fixAvatarUrls(members),
+        members: fixAvatarUrls(uniqueMembers),
         weeklyEntries,
         chatMessages,
+        duplicatesFound,
       };
     } catch (error) {
       throw new Error('Failed to fetch group data bundle');
+    }
+  }
+
+  // Robust member deduplication with conflict resolution
+  private deduplicateMembers(members: GroupMember[]): GroupMember[] {
+    if (members.length === 0) return members;
+
+    const memberMap = new Map<string, GroupMember>();
+
+    members.forEach(member => {
+      const existing = memberMap.get(member.userId);
+      
+      if (!existing) {
+        // First occurrence - add it
+        memberMap.set(member.userId, member);
+      } else {
+        // Duplicate found - resolve conflict
+        const resolvedMember = this.resolveMemberConflict(existing, member);
+        memberMap.set(member.userId, resolvedMember);
+      }
+    });
+
+    return Array.from(memberMap.values());
+  }
+
+  // Smart conflict resolution
+  private resolveMemberConflict(existing: GroupMember, duplicate: GroupMember): GroupMember {
+    // Priority rules for conflict resolution:
+    
+    // 1. Keep the one with more recent data
+    if (duplicate.joinedAt > existing.joinedAt) {
+      return {
+        ...duplicate,
+        // Prefer non-empty values from either record
+        userName: duplicate.userName || existing.userName,
+        avatarUrl: duplicate.avatarUrl || existing.avatarUrl,
+      };
+    }
+    
+    // 2. Keep existing but update with any missing data
+    return {
+      ...existing,
+      userName: existing.userName || duplicate.userName,
+      avatarUrl: existing.avatarUrl || duplicate.avatarUrl,
+    };
+  }
+
+  // Background cleanup (non-blocking)
+  private scheduleBackgroundCleanup(groupId: string, rawMembers: GroupMember[]): void {
+    // Run cleanup in background without blocking UI
+    setTimeout(async () => {
+      try {
+        await this.cleanupDuplicateMembers(groupId, rawMembers);
+      } catch (error) {
+        // Silent cleanup - don't impact user experience
+      }
+    }, 1000);
+  }
+
+  // Safe duplicate cleanup
+  private async cleanupDuplicateMembers(groupId: string, members: GroupMember[]): Promise<void> {
+    const membersByUser = new Map<string, GroupMember[]>();
+    
+    // Group members by userId
+    members.forEach(member => {
+      if (!membersByUser.has(member.userId)) {
+        membersByUser.set(member.userId, []);
+      }
+      membersByUser.get(member.userId)!.push(member);
+    });
+
+    // Find and clean up duplicates
+    for (const [userId, userMembers] of membersByUser) {
+      if (userMembers.length > 1) {
+        // Sort by creation date - keep the most recent one
+        userMembers.sort((a, b) => b.joinedAt.getTime() - a.joinedAt.getTime());
+        
+        // Delete all but the first (most recent)
+        const duplicatesToDelete = userMembers.slice(1);
+        
+        const deletePromises = duplicatesToDelete.map(async (duplicate) => {
+          try {
+            await databases.deleteDocument(
+              appwriteConfig.databaseId,
+              appwriteConfig.groupMembersCollectionId,
+              duplicate.id
+            );
+          } catch (error) {
+            // Continue cleaning other duplicates
+          }
+        });
+
+        await Promise.allSettled(deletePromises);
+      }
     }
   }
 
@@ -404,6 +514,7 @@ class CalendarService {
 
       await this.updateUserAvatar(userId, groupId, avatarUrl);
     } catch (error: any) {
+      // Silent failure for avatar sync
     }
   }
 
@@ -473,6 +584,25 @@ class CalendarService {
 
   subscribeToChat(groupId: string, callback: (message: ChatMessage) => void): () => void {
     return () => {};
+  }
+
+  // Proactive duplicate prevention
+  async preventDuplicatesOnJoin(userId: string, groupId: string): Promise<boolean> {
+    try {
+      const existingMembership = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId),
+          Query.limit(1)
+        ]
+      );
+
+      return existingMembership.documents.length === 0;
+    } catch (error) {
+      return true;
+    }
   }
 
   private calculateStatsFromEntries(entries: CalendarEntry[]): UserStats {
