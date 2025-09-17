@@ -1,4 +1,4 @@
-import { databases, appwriteConfig, generateId } from '../lib/appwrite';
+import { databases, appwriteConfig, generateId, Query } from '../lib/appwrite';
 import { userProfileService } from './userProfileService';
 import { autoCloudUploadService } from './autoCloudUploadService';
 import { 
@@ -32,9 +32,7 @@ class GroupsService {
     });
   }
 
-  // Check if a user is the creator of a group
   async isGroupCreator(userId: string, groupId: string): Promise<boolean> {
-    // Check cache first
     const cached = this.getCachedCreatorStatus(userId, groupId);
     if (cached !== null) {
       return cached;
@@ -55,7 +53,6 @@ class GroupsService {
     }
   }
 
-  // OPTIMIZATION: Retry logic for improved reliability
   private async withRetry<T>(
     operation: () => Promise<T>,
     maxRetries: number = 2,
@@ -78,7 +75,83 @@ class GroupsService {
     throw lastError;
   }
 
-  // Create a new group
+  private async getUserMemberships(userId: string): Promise<GroupMemberRecord[]> {
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.limit(100)
+        ]
+      );
+      return response.documents;
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async getUserGroups(userId: string): Promise<Group[]> {
+    try {
+      const [createdGroupsResponse, userMemberships] = await Promise.all([
+        databases.listDocuments<GroupRecord>(
+          appwriteConfig.databaseId,
+          appwriteConfig.groupsCollectionId,
+          [
+            Query.equal('createdBy', userId),
+            Query.limit(50)
+          ]
+        ),
+        this.getUserMemberships(userId)
+      ]);
+
+      const createdGroups = createdGroupsResponse.documents;
+      const membershipGroupIds = userMemberships.map(m => m.groupId);
+
+      let joinedGroups: GroupRecord[] = [];
+      if (membershipGroupIds.length > 0) {
+        const batchSize = 25;
+        for (let i = 0; i < membershipGroupIds.length; i += batchSize) {
+          const batch = membershipGroupIds.slice(i, i + batchSize);
+          const batchResponse = await databases.listDocuments<GroupRecord>(
+            appwriteConfig.databaseId,
+            appwriteConfig.groupsCollectionId,
+            [
+              Query.equal('$id', batch),
+              Query.limit(batchSize)
+            ]
+          );
+          joinedGroups = [...joinedGroups, ...batchResponse.documents];
+        }
+      }
+
+      const allUserGroups = [...createdGroups, ...joinedGroups];
+      const uniqueGroups = this.deduplicateGroups(allUserGroups);
+
+      return uniqueGroups.map(this.transformGroupRecord);
+    } catch (error: any) {
+      throw new Error('Failed to fetch groups. Please try again.');
+    }
+  }
+
+  async checkMembership(userId: string, groupId: string): Promise<boolean> {
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId),
+          Query.limit(1)
+        ]
+      );
+      
+      return response.documents.length > 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async createGroup(groupData: {
     name: string;
     shareKey: string;
@@ -116,7 +189,6 @@ class GroupsService {
     }
   }
 
-  // Join a group by share key
   async joinGroup(shareKey: string, userId: string): Promise<Group> {
     try {
       const group = await this.findGroupByShareKey(shareKey);
@@ -147,7 +219,6 @@ class GroupsService {
     }
   }
 
-  // Leave a group (for non-creators) - removes membership but keeps chat history
   async leaveGroup(userId: string, groupId: string): Promise<void> {
     try {
       const isCreator = await this.isGroupCreator(userId, groupId);
@@ -172,7 +243,6 @@ class GroupsService {
     }
   }
 
-  // Delete a group permanently (creators only) - removes everything
   async deleteGroup(groupId: string, userId: string): Promise<void> {
     try {
       const isCreator = await this.isGroupCreator(userId, groupId);
@@ -198,11 +268,15 @@ class GroupsService {
     }
   }
 
-  // Create group membership with safe avatar cloud upload
   private async createMembershipWithSafeAvatar(membershipData: {
     userId: string;
     groupId: string;
   }): Promise<void> {
+    const existingMembership = await this.checkMembership(membershipData.userId, membershipData.groupId);
+    if (existingMembership) {
+      return;
+    }
+
     const userProfile = await userProfileService.getUserProfile();
     const userName = userProfile?.name || 'Anonymous User';
     
@@ -215,7 +289,7 @@ class GroupsService {
       
       cloudAvatarUrl = await Promise.race([avatarPromise, timeoutPromise]);
     } catch (avatarError: any) {
-      // Continue without avatar - this is not critical
+      // Continue without avatar
     }
 
     const membershipPayload: any = {
@@ -239,7 +313,6 @@ class GroupsService {
     });
   }
 
-  // Fallback membership creation without avatar
   private async createMembershipFallback(membershipData: {
     userId: string;
     groupId: string;
@@ -260,17 +333,18 @@ class GroupsService {
     );
   }
 
-  // Delete group calendar entries
   private async deleteGroupCalendarEntries(groupId: string): Promise<void> {
     try {
       const response = await databases.listDocuments(
         appwriteConfig.databaseId,
-        appwriteConfig.calendarEntriesCollectionId
+        appwriteConfig.calendarEntriesCollectionId,
+        [
+          Query.equal('groupId', groupId),
+          Query.limit(1000)
+        ]
       );
 
-      const groupEntries = response.documents.filter((doc: any) => doc.groupId === groupId);
-      
-      const deletePromises = groupEntries.map(entry =>
+      const deletePromises = response.documents.map(entry =>
         databases.deleteDocument(
           appwriteConfig.databaseId,
           appwriteConfig.calendarEntriesCollectionId,
@@ -280,21 +354,22 @@ class GroupsService {
 
       await Promise.allSettled(deletePromises);
     } catch (error) {
-      // Don't throw - this is cleanup
+      // Continue cleanup even if this fails
     }
   }
 
-  // Delete group chat messages
   private async deleteGroupChatMessages(groupId: string): Promise<void> {
     try {
       const response = await databases.listDocuments(
         appwriteConfig.databaseId,
-        appwriteConfig.chatMessagesCollectionId
+        appwriteConfig.chatMessagesCollectionId,
+        [
+          Query.equal('groupId', groupId),
+          Query.limit(1000)
+        ]
       );
 
-      const groupMessages = response.documents.filter((doc: any) => doc.groupId === groupId);
-      
-      const deletePromises = groupMessages.map(message =>
+      const deletePromises = response.documents.map(message =>
         databases.deleteDocument(
           appwriteConfig.databaseId,
           appwriteConfig.chatMessagesCollectionId,
@@ -304,11 +379,10 @@ class GroupsService {
 
       await Promise.allSettled(deletePromises);
     } catch (error) {
-      // Don't throw - this is cleanup
+      // Continue cleanup even if this fails
     }
   }
 
-  // Sync user profile to all group memberships
   async syncUserProfileToAllGroups(userId: string): Promise<void> {
     try {
       const userProfile = await userProfileService.getUserProfile();
@@ -353,18 +427,12 @@ class GroupsService {
         }
       });
 
-      const results = await Promise.allSettled(updatePromises);
-      const failedUpdates = results.filter(result => result.status === 'rejected').length;
-      
-      if (failedUpdates > 0) {
-        console.warn(`${failedUpdates} profile sync operations failed`);
-      }
+      await Promise.allSettled(updatePromises);
     } catch (error: any) {
       // Don't throw - let the user proceed even if sync fails
     }
   }
 
-  // Force avatar upload for current user across all groups
   async forceAvatarUploadToAllGroups(userId: string): Promise<void> {
     try {
       if (!autoCloudUploadService.isUploadEnabled()) {
@@ -377,30 +445,6 @@ class GroupsService {
     }
   }
 
-  // Get all groups for a user (created and joined)
-  async getUserGroups(userId: string): Promise<Group[]> {
-    try {
-      const [allGroups, userMemberships] = await Promise.all([
-        this.getAllGroups(),
-        this.getUserMemberships(userId)
-      ]);
-
-      const createdGroups = allGroups.filter(group => group.createdBy === userId);
-      const membershipGroupIds = userMemberships.map(m => m.groupId);
-      const joinedGroups = allGroups.filter(group => 
-        membershipGroupIds.includes(group.$id)
-      );
-
-      const allUserGroups = [...createdGroups, ...joinedGroups];
-      const uniqueGroups = this.deduplicateGroups(allUserGroups);
-
-      return uniqueGroups.map(this.transformGroupRecord);
-    } catch (error: any) {
-      throw new Error('Failed to fetch groups. Please try again.');
-    }
-  }
-
-  // Get a single group by ID
   async getGroup(groupId: string): Promise<Group> {
     try {
       const response = await databases.getDocument<GroupRecord>(
@@ -415,7 +459,6 @@ class GroupsService {
     }
   }
 
-  // Get group by share key for joining
   async joinGroupByShareKey(shareKey: string): Promise<Group | null> {
     try {
       const group = await this.findGroupByShareKey(shareKey);
@@ -429,17 +472,6 @@ class GroupsService {
     }
   }
 
-  // Check if user is a member of a group
-  async checkMembership(userId: string, groupId: string): Promise<boolean> {
-    try {
-      const memberships = await this.getUserMemberships(userId);
-      return memberships.some(membership => membership.groupId === groupId);
-    } catch (error) {
-      return false;
-    }
-  }
-
-  // Update a group
   async updateGroup(groupId: string, updates: Partial<{ name: string }>): Promise<Group> {
     try {
       const response = await databases.updateDocument(
@@ -455,46 +487,73 @@ class GroupsService {
     }
   }
 
-  // PRIVATE HELPER METHODS
+  async cleanupDuplicateMemberships(userId: string, groupId: string): Promise<void> {
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupMembersCollectionId,
+        [
+          Query.equal('userId', userId),
+          Query.equal('groupId', groupId)
+        ]
+      );
 
-  private async getAllGroups(): Promise<GroupRecord[]> {
-    const response = await databases.listDocuments<GroupRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupsCollectionId
-    );
-    return response.documents;
-  }
+      if (response.documents.length > 1) {
+        const duplicates = response.documents.slice(1);
+        const deletePromises = duplicates.map(doc =>
+          databases.deleteDocument(
+            appwriteConfig.databaseId,
+            appwriteConfig.groupMembersCollectionId,
+            doc.$id
+          )
+        );
 
-  private async getUserMemberships(userId: string): Promise<GroupMemberRecord[]> {
-    const response = await databases.listDocuments<GroupMemberRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupMembersCollectionId
-    );
-    return response.documents.filter(doc => doc.userId === userId);
+        await Promise.allSettled(deletePromises);
+      }
+    } catch (error) {
+      // Continue even if cleanup fails
+    }
   }
 
   private async findGroupByShareKey(shareKey: string): Promise<GroupRecord | null> {
-    const allGroups = await this.getAllGroups();
-    return allGroups.find(group => group.shareKey === shareKey) || null;
+    try {
+      const response = await databases.listDocuments<GroupRecord>(
+        appwriteConfig.databaseId,
+        appwriteConfig.groupsCollectionId,
+        [
+          Query.equal('shareKey', shareKey),
+          Query.limit(1)
+        ]
+      );
+      return response.documents[0] || null;
+    } catch (error) {
+      return null;
+    }
   }
 
   private async deleteGroupMemberships(groupId: string): Promise<void> {
-    const response = await databases.listDocuments<GroupMemberRecord>(
-      appwriteConfig.databaseId,
-      appwriteConfig.groupMembersCollectionId
-    );
-
-    const groupMemberships = response.documents.filter(doc => doc.groupId === groupId);
-    
-    const deletePromises = groupMemberships.map(membership =>
-      databases.deleteDocument(
+    try {
+      const response = await databases.listDocuments<GroupMemberRecord>(
         appwriteConfig.databaseId,
         appwriteConfig.groupMembersCollectionId,
-        membership.$id
-      )
-    );
+        [
+          Query.equal('groupId', groupId),
+          Query.limit(1000)
+        ]
+      );
 
-    await Promise.allSettled(deletePromises);
+      const deletePromises = response.documents.map(membership =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.groupMembersCollectionId,
+          membership.$id
+        )
+      );
+
+      await Promise.allSettled(deletePromises);
+    } catch (error) {
+      // Continue cleanup even if this fails
+    }
   }
 
   private deduplicateGroups(groups: GroupRecord[]): GroupRecord[] {

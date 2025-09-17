@@ -1,6 +1,3 @@
-// Alternative approach: Use inverted FlatList which naturally shows latest messages at bottom
-// This reverses the data and displays it inverted, which often works better for chat
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
@@ -109,10 +106,51 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const renderMessage = useCallback(({ item: message }: { item: ChatMessage }) => {
     const isCurrentUser = message.userId === currentUserId;
-    const time = message.timestamp.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    
+    // Format timestamp with month, day, and time
+    const formatMessageTime = (timestamp: Date): string => {
+      const now = new Date();
+      const messageDate = new Date(timestamp);
+      
+      // Check if message is from today
+      const isToday = messageDate.toDateString() === now.toDateString();
+      
+      // Check if message is from yesterday
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday = messageDate.toDateString() === yesterday.toDateString();
+      
+      // Check if message is from this year
+      const isThisYear = messageDate.getFullYear() === now.getFullYear();
+      
+      const timeString = messageDate.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      if (isToday) {
+        return timeString; // Just show time for today's messages
+      } else if (isYesterday) {
+        return `Yesterday ${timeString}`;
+      } else if (isThisYear) {
+        // Show month/day for this year's messages
+        const monthDay = messageDate.toLocaleDateString([], { 
+          month: 'short', 
+          day: 'numeric' 
+        });
+        return `${monthDay} ${timeString}`;
+      } else {
+        // Show full date for older messages
+        const fullDate = messageDate.toLocaleDateString([], { 
+          month: 'short', 
+          day: 'numeric',
+          year: 'numeric'
+        });
+        return `${fullDate} ${timeString}`;
+      }
+    };
+    
+    const formattedTime = formatMessageTime(message.timestamp);
     
     return (
       <View style={[
@@ -121,7 +159,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       ]}>
         {!isCurrentUser && (
           <Text style={styles.messageSender}>
-            {message.userName} {time}
+            {message.userName} {formattedTime}
           </Text>
         )}
         <View style={[
@@ -136,7 +174,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </Text>
         </View>
         {isCurrentUser && (
-          <Text style={styles.messageTime}>{time}</Text>
+          <Text style={styles.messageTime}>{formattedTime}</Text>
         )}
       </View>
     );
