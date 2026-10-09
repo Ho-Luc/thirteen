@@ -11,7 +11,7 @@ import JoinGroupButton from '../../components/group_management/joinGroupButton';
 import JoinGroupModal from '../../components/group_management/joinGroupModal';
 import { Group } from '../../components/group_management/types';
 import { groupsService } from '../../services/groupsService';
-import { userService } from '../../services/userService';
+import { userService, SessionUnavailableError } from '../../services/userService';
 
 // Import the enhanced settings modal and new leave modal
 import SettingsModal from '../../components/group_management/settingsModal';
@@ -76,7 +76,15 @@ const CreateGroupsScreen = () => {
       // Load user's groups
       await loadUserGroups(currentUserId);
     } catch (error) {
-      Alert.alert('Error', 'Failed to initialize user session');
+      if (error instanceof SessionUnavailableError) {
+        Alert.alert(
+          'Connection problem',
+          "We couldn't reach the server to load your groups. Check your connection and try again.",
+          [{ text: 'Try again', onPress: () => initializeUserAndLoadGroups() }]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to initialize user session');
+      }
     } finally {
       setIsLoading(false);
     }
